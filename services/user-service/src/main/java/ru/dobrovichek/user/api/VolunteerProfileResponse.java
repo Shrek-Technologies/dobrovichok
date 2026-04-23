@@ -1,0 +1,17 @@
+package ru.dobrovichek.user.api;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+public record VolunteerProfileResponse(
+        UUID id,
+        String fullName,
+        String bio,
+        String city,
+        BigDecimal rating,
+        int ratingCount,
+        int completedRequestsCount,
+        Instant updatedAt
+) {
+}

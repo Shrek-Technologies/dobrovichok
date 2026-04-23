@@ -1,6 +1,35 @@
 spring:
   application:
     name: user-service
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  datasource:
+    url: jdbc:postgresql://${USER_DB_HOST:localhost}:${USER_DB_PORT:5434}/${USER_DB_NAME:dobrovichek_user}
+    username: ${USER_DB_USERNAME:dobrovichek}
+    password: ${USER_DB_PASSWORD:dobrovichek}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  liquibase:
+    change-log: classpath:/db/changelog/db.changelog-master.xml
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  paths-to-match:
+    - /api/v1/**
 
 server:
   port: 8082
+
+dobrovichek:
+  messaging:
+    enabled: true

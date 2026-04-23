@@ -16,6 +16,23 @@ services:
     volumes:
       - request-service-postgres-data:/var/lib/postgresql/data
 
+  user-service-postgres:
+    image: postgres:16-alpine
+    container_name: dobrovichek-user-postgres
+    environment:
+      POSTGRES_DB: dobrovichek_user
+      POSTGRES_USER: dobrovichek
+      POSTGRES_PASSWORD: dobrovichek
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dobrovichek -d dobrovichek_user"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - user-service-postgres-data:/var/lib/postgresql/data
+
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     container_name: dobrovichek-rabbitmq
@@ -33,3 +50,4 @@ services:
 
 volumes:
   request-service-postgres-data:
+  user-service-postgres-data:
