@@ -1,6 +1,11 @@
 spring:
   application:
     name: request-service
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
   datasource:
     url: jdbc:postgresql://${REQUEST_DB_HOST:localhost}:${REQUEST_DB_PORT:5433}/${REQUEST_DB_NAME:dobrovichek_request}
     username: ${REQUEST_DB_USERNAME:dobrovichek}
@@ -24,3 +29,7 @@ springdoc:
 
 server:
   port: 8083
+
+dobrovichek:
+  messaging:
+    enabled: true
