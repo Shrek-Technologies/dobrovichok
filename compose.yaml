@@ -1,0 +1,20 @@
+services:
+  request-service-postgres:
+    image: postgres:16-alpine
+    container_name: dobrovichek-request-postgres
+    environment:
+      POSTGRES_DB: dobrovichek_request
+      POSTGRES_USER: dobrovichek
+      POSTGRES_PASSWORD: dobrovichek
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dobrovichek -d dobrovichek_request"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - request-service-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  request-service-postgres-data:
