@@ -14,6 +14,7 @@ import ru.dobrovichek.contracts.UserRole;
 import ru.dobrovichek.events.RequestStatusChangedEvent;
 import ru.dobrovichek.security.ServiceHeaders;
 import ru.dobrovichek.user.application.VolunteerHistoryProjector;
+import ru.dobrovichek.user.infrastructure.persistence.VolunteerRatingJpaRepository;
 import ru.dobrovichek.user.infrastructure.persistence.UserProfileJpaRepository;
 import ru.dobrovichek.user.infrastructure.persistence.VolunteerRequestHistoryJpaRepository;
 
@@ -22,6 +23,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -52,8 +54,12 @@ class UserControllerIntegrationTest {
     @Autowired
     private VolunteerRequestHistoryJpaRepository volunteerRequestHistoryRepository;
 
+    @Autowired
+    private VolunteerRatingJpaRepository volunteerRatingRepository;
+
     @AfterEach
     void tearDown() {
+        volunteerRatingRepository.deleteAll();
         volunteerRequestHistoryRepository.deleteAll();
         userProfileRepository.deleteAll();
     }
@@ -110,6 +116,110 @@ class UserControllerIntegrationTest {
                         .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
                 .andExpect(status().isOk());
 
+        projectCompletedRequests();
+
+        mockMvc.perform(get("/api/v1/volunteers/{volunteerId}", VOLUNTEER_ID)
+                        .header(ServiceHeaders.USER_ID, WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(VOLUNTEER_ID.toString()))
+                .andExpect(jsonPath("$.fullName").value("Elena Smirnova"))
+                .andExpect(jsonPath("$.completedRequestsCount").value(2));
+
+        mockMvc.perform(get("/api/v1/volunteers/{volunteerId}/requests/history", VOLUNTEER_ID)
+                        .header(ServiceHeaders.USER_ID, WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].requestId").value(SECOND_REQUEST_ID.toString()))
+                .andExpect(jsonPath("$[0].wardId").value(SECOND_WARD_ID.toString()))
+                .andExpect(jsonPath("$[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$[1].requestId").value(REQUEST_ID.toString()));
+    }
+
+    @Test
+    void wardsCanLeaveRatingsAndVolunteerRatingIsRecalculated() throws Exception {
+        mockMvc.perform(put("/api/v1/users/me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "fullName", "Elena Smirnova",
+                                "phone", "+79991111111",
+                                "bio", "Volunteer driver",
+                                "city", "Saint Petersburg"
+                        )))
+                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                .andExpect(status().isOk());
+
+        projectCompletedRequests();
+
+        mockMvc.perform(post("/api/v1/volunteers/{volunteerId}/ratings", VOLUNTEER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "requestId", REQUEST_ID,
+                                "score", 4
+                        )))
+                        .header(ServiceHeaders.USER_ID, WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestId").value(REQUEST_ID.toString()))
+                .andExpect(jsonPath("$.score").value(4));
+
+        mockMvc.perform(post("/api/v1/volunteers/{volunteerId}/ratings", VOLUNTEER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "requestId", SECOND_REQUEST_ID,
+                                "score", 5
+                        )))
+                        .header(ServiceHeaders.USER_ID, SECOND_WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestId").value(SECOND_REQUEST_ID.toString()))
+                .andExpect(jsonPath("$.score").value(5));
+
+        mockMvc.perform(get("/api/v1/volunteers/{volunteerId}", VOLUNTEER_ID)
+                        .header(ServiceHeaders.USER_ID, WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rating").value(4.5))
+                .andExpect(jsonPath("$.ratingCount").value(2));
+    }
+
+    @Test
+    void wardCannotLeaveDuplicateOrForeignRating() throws Exception {
+        projectCompletedRequests();
+
+        mockMvc.perform(post("/api/v1/volunteers/{volunteerId}/ratings", VOLUNTEER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "requestId", REQUEST_ID,
+                                "score", 5
+                        )))
+                        .header(ServiceHeaders.USER_ID, WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/volunteers/{volunteerId}/ratings", VOLUNTEER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "requestId", REQUEST_ID,
+                                "score", 4
+                        )))
+                        .header(ServiceHeaders.USER_ID, WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/v1/volunteers/{volunteerId}/ratings", VOLUNTEER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "requestId", SECOND_REQUEST_ID,
+                                "score", 4
+                        )))
+                        .header(ServiceHeaders.USER_ID, WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isForbidden());
+    }
+
+    private void projectCompletedRequests() {
         volunteerHistoryProjector.project(new RequestStatusChangedEvent(
                 REQUEST_ID,
                 WARD_ID,
@@ -138,22 +248,5 @@ class UserControllerIntegrationTest {
                 RequestStatus.COMPLETED,
                 Instant.parse("2026-04-23T15:00:00Z")
         ));
-
-        mockMvc.perform(get("/api/v1/volunteers/{volunteerId}", VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(VOLUNTEER_ID.toString()))
-                .andExpect(jsonPath("$.fullName").value("Elena Smirnova"))
-                .andExpect(jsonPath("$.completedRequestsCount").value(2));
-
-        mockMvc.perform(get("/api/v1/volunteers/{volunteerId}/requests/history", VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].requestId").value(SECOND_REQUEST_ID.toString()))
-                .andExpect(jsonPath("$[0].wardId").value(SECOND_WARD_ID.toString()))
-                .andExpect(jsonPath("$[0].status").value("COMPLETED"))
-                .andExpect(jsonPath("$[1].requestId").value(REQUEST_ID.toString()));
     }
 }

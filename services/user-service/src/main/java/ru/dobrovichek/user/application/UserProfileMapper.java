@@ -3,8 +3,10 @@ package ru.dobrovichek.user.application;
 import org.springframework.stereotype.Component;
 import ru.dobrovichek.user.api.UserProfileResponse;
 import ru.dobrovichek.user.api.VolunteerProfileResponse;
+import ru.dobrovichek.user.api.VolunteerRatingResponse;
 import ru.dobrovichek.user.api.VolunteerRequestHistoryResponse;
 import ru.dobrovichek.user.domain.UserProfile;
+import ru.dobrovichek.user.domain.VolunteerRating;
 import ru.dobrovichek.user.domain.VolunteerRequestHistory;
 
 @Component
@@ -48,6 +50,17 @@ public class UserProfileMapper {
                 history.getCompletedAt(),
                 history.getCancelledAt(),
                 history.getUpdatedAt()
+        );
+    }
+
+    public VolunteerRatingResponse toVolunteerRatingResponse(VolunteerRating rating) {
+        return new VolunteerRatingResponse(
+                rating.getId(),
+                rating.getRequestId(),
+                rating.getVolunteerId(),
+                rating.getWardId(),
+                rating.getScore(),
+                rating.getCreatedAt()
         );
     }
 }

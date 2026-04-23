@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import ru.dobrovichek.user.application.BadRequestException;
 import ru.dobrovichek.user.application.ConflictException;
+import ru.dobrovichek.user.application.ForbiddenException;
 import ru.dobrovichek.user.application.UserProfileNotFoundException;
 
 import java.time.Instant;
@@ -34,6 +35,14 @@ public class RestExceptionHandler {
                 .orElse("Validation failed")
                 : exception.getMessage();
         return build(HttpStatus.BAD_REQUEST, message, request);
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ApiErrorResponse> handleForbidden(
+            ForbiddenException exception,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.FORBIDDEN, exception.getMessage(), request);
     }
 
     @ExceptionHandler(ConflictException.class)

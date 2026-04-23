@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd">
+
+    <changeSet id="002-create-volunteer-ratings" author="codex">
+        <createTable tableName="volunteer_ratings">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="request_id" type="UUID">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_volunteer_ratings_request_id"/>
+            </column>
+            <column name="volunteer_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ward_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="score" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP WITH TIME ZONE">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="volunteer_ratings" indexName="idx_volunteer_ratings_volunteer_created_at">
+            <column name="volunteer_id"/>
+            <column name="created_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

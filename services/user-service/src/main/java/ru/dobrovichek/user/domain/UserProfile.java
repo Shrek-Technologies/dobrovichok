@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import ru.dobrovichek.contracts.UserRole;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
@@ -82,6 +83,15 @@ public class UserProfile {
         }
         completedRequestsCount += 1;
         updatedAt = now;
+    }
+
+    public void updateRating(BigDecimal rating, int ratingCount, Instant now) {
+        if (role != UserRole.VOLUNTEER) {
+            throw new IllegalStateException("Only volunteer profile can have rating");
+        }
+        this.rating = Objects.requireNonNull(rating).setScale(2, RoundingMode.HALF_UP);
+        this.ratingCount = ratingCount;
+        this.updatedAt = now;
     }
 
     private String normalize(String value) {
