@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -33,14 +34,17 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
+import ru.dobrovichek.android.data.AuthRepository
 import ru.dobrovichek.android.data.RequestRepository
+import ru.dobrovichek.android.data.UserSession
 
 enum class HelpCategory(val title: String) {
     DELIVERY("Доставка"),
@@ -112,70 +116,191 @@ class WardViewModel(
     }
 }
 
-class WardViewModelFactory(
-    private val repository: RequestRepository
+data class AuthUiState(
+    val fullName: String = "",
+    val phone: String = "",
+    val password: String = "",
+    val role: String = "WARD",
+    val isRegisterMode: Boolean = false,
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val session: UserSession? = null
+)
+
+class AuthViewModel(
+    private val authRepository: AuthRepository
+) : ViewModel() {
+    private val _state = MutableStateFlow(AuthUiState(session = authRepository.currentSession()))
+    val state: StateFlow<AuthUiState> = _state.asStateFlow()
+
+    fun setRegisterMode(enabled: Boolean) = _state.update { it.copy(isRegisterMode = enabled, error = null) }
+    fun updateFullName(value: String) = _state.update { it.copy(fullName = value) }
+    fun updatePhone(value: String) = _state.update { it.copy(phone = value) }
+    fun updatePassword(value: String) = _state.update { it.copy(password = value) }
+    fun updateRole(value: String) = _state.update { it.copy(role = value) }
+
+    fun submit() {
+        val validationError = validateAuthInput(state.value)
+        if (validationError != null) {
+            _state.update { it.copy(error = validationError) }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null) }
+            val authAction: suspend () -> UserSession = if (state.value.isRegisterMode) {
+                {
+                    authRepository.register(
+                        fullName = state.value.fullName.trim(),
+                        phone = state.value.phone.trim(),
+                        password = state.value.password,
+                        role = state.value.role
+                    )
+                }
+            } else {
+                {
+                    authRepository.login(
+                        phone = state.value.phone.trim(),
+                        password = state.value.password
+                    )
+                }
+            }
+            runCatching { authAction() }
+                .onSuccess { session ->
+                    _state.update { it.copy(isLoading = false, session = session, error = null) }
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(isLoading = false, error = mapAuthError(error)) }
+                }
+        }
+    }
+
+    fun logout() {
+        authRepository.logout()
+        _state.update { AuthUiState() }
+    }
+
+    private fun validateAuthInput(state: AuthUiState): String? {
+        if (state.isRegisterMode && state.fullName.isBlank()) {
+            return "Введите ФИО"
+        }
+        if (!state.phone.matches(Regex("^[0-9+() -]{7,20}$"))) {
+            return "Введите корректный телефон (от 7 символов, можно +7...)"
+        }
+        if (state.password.length < 3) {
+            return "Пароль должен быть не короче 3 символов"
+        }
+        return null
+    }
+
+    private fun mapAuthError(error: Throwable): String {
+        if (error is HttpException && error.code() == 400) {
+            return "Некорректные данные: проверьте телефон и пароль"
+        }
+        if (error is HttpException && error.code() == 401) {
+            return "Неверный телефон или пароль"
+        }
+        if (error is HttpException && error.code() == 409) {
+            return "Пользователь с таким телефоном уже существует"
+        }
+        return error.message ?: "Ошибка авторизации"
+    }
+}
+
+class AppViewModelFactory(
+    private val authRepository: AuthRepository,
+    private val requestRepository: RequestRepository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return AuthViewModel(authRepository) as T
+        }
         if (modelClass.isAssignableFrom(WardViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return WardViewModel(repository) as T
+            return WardViewModel(requestRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
 
 @Composable
-fun WardApp(repository: RequestRepository) {
-    val navController = rememberNavController()
-    val vm: WardViewModel = viewModel(factory = WardViewModelFactory(repository))
-    val state by vm.state.collectAsStateWithLifecycle()
-
-    NavHost(navController = navController, startDestination = "home") {
-        composable("home") {
-            HomeScreen(onCreate = { navController.navigate("step1") })
-        }
-        composable("step1") {
-            StepOneScreen(
-                state = state,
-                onCategory = vm::chooseCategory,
-                onUrgency = vm::chooseUrgency,
-                onNext = { navController.navigate("address") }
-            )
-        }
-        composable("address") {
-            AddressScreen(
-                state = state,
-                onApartmentChange = vm::updateApartment,
-                onNext = { navController.navigate("confirm") }
-            )
-        }
-        composable("confirm") {
-            ConfirmScreen(
-                state = state,
-                onCommentChange = vm::updateComment,
-                onCreate = {
-                    vm.createRequest { navController.navigate("searching") }
-                }
-            )
-        }
-        composable("searching") {
-            SearchingScreen(
-                state = state,
-                onReady = { navController.navigate("found") },
-                onCancel = { vm.cancelRequest { navController.navigate("home") } }
-            )
-        }
-        composable("found") {
-            VolunteerFoundScreen(
-                state = state,
-                onCancel = { vm.cancelRequest { navController.navigate("home") } }
-            )
+fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository) {
+    val factory = AppViewModelFactory(authRepository, requestRepository)
+    val authVm: AuthViewModel = viewModel(factory = factory)
+    val wardVm: WardViewModel = viewModel(factory = factory)
+    val authState by authVm.state.collectAsStateWithLifecycle()
+    if (authState.session == null) {
+        AuthScreen(
+            state = authState,
+            onFullNameChange = authVm::updateFullName,
+            onPhoneChange = authVm::updatePhone,
+            onPasswordChange = authVm::updatePassword,
+            onRoleChange = authVm::updateRole,
+            onToggleMode = authVm::setRegisterMode,
+            onSubmit = authVm::submit
+        )
+    } else {
+        val wardState by wardVm.state.collectAsStateWithLifecycle()
+        val navController = rememberNavController()
+        NavHost(navController = navController, startDestination = "home") {
+            composable("home") {
+                HomeScreen(
+                    session = authState.session,
+                    onCreate = { navController.navigate("step1") },
+                    onLogout = authVm::logout
+                )
+            }
+            composable("step1") {
+                StepOneScreen(
+                    state = wardState,
+                    onCategory = wardVm::chooseCategory,
+                    onUrgency = wardVm::chooseUrgency,
+                    onNext = { navController.navigate("address") }
+                )
+            }
+            composable("address") {
+                AddressScreen(
+                    state = wardState,
+                    onApartmentChange = wardVm::updateApartment,
+                    onNext = { navController.navigate("confirm") }
+                )
+            }
+            composable("confirm") {
+                ConfirmScreen(
+                    state = wardState,
+                    onCommentChange = wardVm::updateComment,
+                    onCreate = {
+                        wardVm.createRequest { navController.navigate("searching") }
+                    }
+                )
+            }
+            composable("searching") {
+                SearchingScreen(
+                    state = wardState,
+                    onReady = { navController.navigate("found") },
+                    onCancel = { wardVm.cancelRequest { navController.navigate("home") } }
+                )
+            }
+            composable("found") {
+                VolunteerFoundScreen(
+                    state = wardState,
+                    onCancel = { wardVm.cancelRequest { navController.navigate("home") } }
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun HomeScreen(onCreate: () -> Unit) {
+private fun AuthScreen(
+    state: AuthUiState,
+    onFullNameChange: (String) -> Unit,
+    onPhoneChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onRoleChange: (String) -> Unit,
+    onToggleMode: (Boolean) -> Unit,
+    onSubmit: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -183,10 +308,85 @@ private fun HomeScreen(onCreate: () -> Unit) {
         verticalArrangement = Arrangement.Center
     ) {
         Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Помощь рядом", style = MaterialTheme.typography.titleMedium, color = Color.Gray)
-        Spacer(Modifier.height(32.dp))
+        Text(if (state.isRegisterMode) "Регистрация" else "Вход", style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(16.dp))
+        if (state.isRegisterMode) {
+            OutlinedTextField(
+                value = state.fullName,
+                onValueChange = onFullNameChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("ФИО") }
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        OutlinedTextField(
+            value = state.phone,
+            onValueChange = onPhoneChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Телефон") }
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = state.password,
+            onValueChange = onPasswordChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Пароль") }
+        )
+        if (state.isRegisterMode) {
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { onRoleChange("WARD") },
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (state.role == "WARD") "✓ Подопечный" else "Подопечный") }
+                Button(
+                    onClick = { onRoleChange("VOLUNTEER") },
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (state.role == "VOLUNTEER") "✓ Волонтёр" else "Волонтёр") }
+            }
+        }
+        state.error?.let {
+            Spacer(Modifier.height(12.dp))
+            Text(it, color = MaterialTheme.colorScheme.error)
+        }
+        Spacer(Modifier.height(16.dp))
+        Button(
+            enabled = !state.isLoading,
+            onClick = onSubmit,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (state.isRegisterMode) "Зарегистрироваться" else "Войти")
+        }
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = { onToggleMode(!state.isRegisterMode) }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (state.isRegisterMode) "У меня уже есть аккаунт" else "Создать новый аккаунт")
+        }
+    }
+}
+
+@Composable
+private fun HomeScreen(session: UserSession?, onCreate: () -> Unit, onLogout: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(
+            session?.let { "${it.fullName} (${it.role})" } ?: "Помощь рядом",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.Gray
+        )
+        Spacer(Modifier.height(24.dp))
         Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
             Text("Создать заявку")
+        }
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
+            Text("Выйти")
         }
     }
 }

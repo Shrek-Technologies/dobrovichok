@@ -37,11 +37,16 @@ interface RequestApi {
 }
 
 object RequestApiFactory {
-    fun create(): RequestApi {
+    fun create(sessionProvider: () -> UserSession?): RequestApi {
         val authHeadersInterceptor = Interceptor { chain ->
+            val session = sessionProvider()
             val request = chain.request().newBuilder()
-                .addHeader("X-User-Id", BuildConfig.WARD_USER_ID)
-                .addHeader("X-User-Role", "WARD")
+                .apply {
+                    if (session != null) {
+                        addHeader("X-User-Id", session.userId)
+                        addHeader("X-User-Role", session.role)
+                    }
+                }
                 .build()
             chain.proceed(request)
         }
