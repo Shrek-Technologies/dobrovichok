@@ -33,3 +33,10 @@ If needed, override them with environment variables:
 - `REQUEST_DB_NAME`
 - `REQUEST_DB_USERNAME`
 - `REQUEST_DB_PASSWORD`
+
+## Android App (Ward MVP)
+
+Android app prototype is located in `apps/android`.
+
+Open `apps/android` as a standalone Gradle project in Android Studio and run it on an emulator.
+The app is preconfigured to call request-service at `http://10.0.2.2:8083/`.
