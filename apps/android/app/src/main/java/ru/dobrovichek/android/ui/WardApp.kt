@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package ru.dobrovichek.android.ui
 
 import androidx.compose.foundation.background
@@ -16,13 +18,26 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +51,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +61,25 @@ import retrofit2.HttpException
 import ru.dobrovichek.android.data.AuthRepository
 import ru.dobrovichek.android.data.RequestRepository
 import ru.dobrovichek.android.data.UserSession
+import ru.dobrovichek.android.data.RequestSummaryDto
+import ru.dobrovichek.android.data.RequestResponseDto
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.yandex.mapkit.mapview.MapView
+import com.yandex.mapkit.geometry.Point
+import com.yandex.mapkit.map.CameraPosition
+import com.yandex.mapkit.map.IconStyle
+import com.yandex.mapkit.MapKitFactory
+import com.yandex.mapkit.map.MapObjectTapListener
+import com.yandex.mapkit.user_location.UserLocationLayer
+import com.yandex.runtime.image.ImageProvider
+import android.Manifest
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 
 enum class HelpCategory(val title: String) {
     DELIVERY("Доставка"),
@@ -60,10 +95,13 @@ enum class Urgency(val title: String) {
 
 data class WardUiState(
     val category: HelpCategory = HelpCategory.TECH,
-    val urgency: Urgency = Urgency.ASAP,
+    val urgency: Urgency = Urgency.ASAP, 
     val address: String = "Политехническая улица, 29В",
     val apartment: String = "106",
     val comment: String = "",
+    val latitude: Double = 60.0092,
+    val longitude: Double = 30.3578,
+    val assignedVolunteerId: String? = null,
     val createdRequestId: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null
@@ -74,11 +112,21 @@ class WardViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(WardUiState())
     val state: StateFlow<WardUiState> = _state.asStateFlow()
+    private var searchJob: Job? = null
 
     fun chooseCategory(category: HelpCategory) = _state.update { it.copy(category = category) }
     fun chooseUrgency(urgency: Urgency) = _state.update { it.copy(urgency = urgency) }
     fun updateApartment(value: String) = _state.update { it.copy(apartment = value) }
     fun updateComment(value: String) = _state.update { it.copy(comment = value) }
+    fun updateAddressPoint(latitude: Double, longitude: Double) {
+        _state.update {
+            it.copy(
+                latitude = latitude,
+                longitude = longitude,
+                address = "Адрес по карте"
+            )
+        }
+    }
 
     fun createRequest(onSuccess: () -> Unit) {
         viewModelScope.launch {
@@ -89,10 +137,12 @@ class WardViewModel(
                     urgency = state.value.urgency.title,
                     address = state.value.address,
                     apartment = state.value.apartment,
-                    comment = state.value.comment
+                    comment = state.value.comment,
+                    latitude = state.value.latitude,
+                    longitude = state.value.longitude
                 )
             }.onSuccess { requestId ->
-                _state.update { it.copy(createdRequestId = requestId, isLoading = false) }
+                _state.update { it.copy(createdRequestId = requestId, assignedVolunteerId = null, isLoading = false) }
                 onSuccess()
             }.onFailure { error ->
                 _state.update { it.copy(isLoading = false, error = error.message ?: "Ошибка сети") }
@@ -100,8 +150,27 @@ class WardViewModel(
         }
     }
 
+    fun startSearching(onFound: () -> Unit) {
+        val requestId = state.value.createdRequestId ?: return
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            repeat(120) {
+                runCatching { repository.getRequest(requestId) }
+                    .onSuccess { request ->
+                        if (request.status.equals("ACCEPTED", ignoreCase = true) && request.volunteerId != null) {
+                            _state.update { it.copy(assignedVolunteerId = request.volunteerId) }
+                            onFound()
+                            return@launch
+                        }
+                    }
+                delay(3000)
+            }
+        }
+    }
+
     fun cancelRequest(onCancelled: () -> Unit) {
         val requestId = state.value.createdRequestId ?: return
+        searchJob?.cancel()
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             runCatching { repository.cancelRequest(requestId) }
@@ -206,6 +275,56 @@ class AuthViewModel(
     }
 }
 
+data class VolunteerUiState(
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val requests: List<RequestSummaryDto> = emptyList(),
+    val selected: RequestSummaryDto? = null,
+    val acceptedRequestId: String? = null,
+    val acceptedDetails: RequestResponseDto? = null
+)
+
+class VolunteerViewModel(
+    private val repository: RequestRepository
+) : ViewModel() {
+    private val _state = MutableStateFlow(VolunteerUiState())
+    val state: StateFlow<VolunteerUiState> = _state.asStateFlow()
+
+    fun refreshNearby(latitude: Double, longitude: Double) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null) }
+            runCatching { repository.findNearby(latitude, longitude, radiusKm = 1.0) }
+                .onSuccess { items -> _state.update { it.copy(isLoading = false, requests = items) } }
+                .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message ?: "Ошибка загрузки") } }
+        }
+    }
+
+    fun select(item: RequestSummaryDto?) {
+        _state.update { it.copy(selected = item, error = null) }
+    }
+
+    fun acceptSelected(onAccepted: (String) -> Unit) {
+        val selected = state.value.selected ?: return
+        viewModelScope.launch {
+            runCatching { repository.acceptRequest(selected.id) }
+                .onSuccess {
+                    _state.update { it.copy(acceptedRequestId = selected.id, selected = null) }
+                    onAccepted(selected.id)
+                }
+                .onFailure { error -> _state.update { it.copy(error = error.message ?: "Не удалось принять заявку") } }
+        }
+    }
+
+    fun loadAcceptedDetails(requestId: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null) }
+            runCatching { repository.getRequest(requestId) }
+                .onSuccess { details -> _state.update { it.copy(isLoading = false, acceptedDetails = details) } }
+                .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message ?: "Не удалось загрузить заявку") } }
+        }
+    }
+}
+
 class AppViewModelFactory(
     private val authRepository: AuthRepository,
     private val requestRepository: RequestRepository
@@ -218,6 +337,10 @@ class AppViewModelFactory(
         if (modelClass.isAssignableFrom(WardViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
             return WardViewModel(requestRepository) as T
+        }
+        if (modelClass.isAssignableFrom(VolunteerViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return VolunteerViewModel(requestRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
@@ -241,8 +364,35 @@ fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository
         )
     } else {
         val wardState by wardVm.state.collectAsStateWithLifecycle()
+        val volunteerVm: VolunteerViewModel = viewModel(factory = factory)
+        val volunteerState by volunteerVm.state.collectAsStateWithLifecycle()
         val navController = rememberNavController()
-        NavHost(navController = navController, startDestination = "home") {
+        val start = if (authState.session?.role == "VOLUNTEER") "volunteer_map" else "home"
+        NavHost(navController = navController, startDestination = start) {
+            composable("volunteer_map") {
+                VolunteerMapScreen(
+                    state = volunteerState,
+                    onRefresh = { lat, lon -> volunteerVm.refreshNearby(lat, lon) },
+                    onSelect = volunteerVm::select,
+                    onAcceptSelected = { volunteerVm.acceptSelected { navController.navigate("volunteer_confirm/$it") } },
+                    onLogout = authVm::logout
+                )
+            }
+            composable("volunteer_confirm/{requestId}") { backStackEntry ->
+                val requestId = backStackEntry.arguments?.getString("requestId") ?: return@composable
+                VolunteerAcceptConfirmScreen(
+                    onBack = { navController.popBackStack() },
+                    onConfirm = { navController.navigate("volunteer_details/$requestId") }
+                )
+            }
+            composable("volunteer_details/{requestId}") { backStackEntry ->
+                val requestId = backStackEntry.arguments?.getString("requestId") ?: return@composable
+                LaunchedEffect(requestId) { volunteerVm.loadAcceptedDetails(requestId) }
+                VolunteerRequestDetailsScreen(
+                    state = volunteerState,
+                    onBackToMap = { navController.popBackStack("volunteer_map", inclusive = false) }
+                )
+            }
             composable("home") {
                 HomeScreen(
                     session = authState.session,
@@ -261,13 +411,14 @@ fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository
             composable("address") {
                 AddressScreen(
                     state = wardState,
-                    onApartmentChange = wardVm::updateApartment,
+                    onAddressPointChange = wardVm::updateAddressPoint,
                     onNext = { navController.navigate("confirm") }
                 )
             }
             composable("confirm") {
                 ConfirmScreen(
                     state = wardState,
+                    onApartmentChange = wardVm::updateApartment,
                     onCommentChange = wardVm::updateComment,
                     onCreate = {
                         wardVm.createRequest { navController.navigate("searching") }
@@ -277,7 +428,7 @@ fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository
             composable("searching") {
                 SearchingScreen(
                     state = wardState,
-                    onReady = { navController.navigate("found") },
+                    onStartSearch = { wardVm.startSearching { navController.navigate("found") } },
                     onCancel = { wardVm.cancelRequest { navController.navigate("home") } }
                 )
             }
@@ -288,6 +439,179 @@ fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun VolunteerMapScreen(
+    state: VolunteerUiState,
+    onRefresh: (Double, Double) -> Unit,
+    onSelect: (RequestSummaryDto?) -> Unit,
+    onAcceptSelected: () -> Unit,
+    onLogout: () -> Unit
+) {
+    val context = LocalContext.current
+    val mapView = remember { MapView(context) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var userLocationLayer: UserLocationLayer? by remember { mutableStateOf(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* no-op */ }
+
+    DisposableEffect(mapView) {
+        mapView.onStart()
+        onDispose { mapView.onStop() }
+    }
+
+    LaunchedEffect(Unit) {
+        permissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
+
+    val fallback = remember { Point(60.0092, 30.3578) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Поиск заданий") },
+                actions = {
+                    IconButton(onClick = onLogout) { Icon(Icons.Default.Close, contentDescription = "Выйти") }
+                }
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { mapView },
+                update = {
+                    val map = mapView.mapWindow.map
+                    map.move(CameraPosition(fallback, 13.5f, 0f, 0f))
+                    map.mapObjects.clear()
+
+                    val hasLocationPermission =
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+                    if (hasLocationPermission) {
+                        if (userLocationLayer == null) {
+                            val mapKit = MapKitFactory.getInstance()
+                            userLocationLayer = mapKit.createUserLocationLayer(mapView.mapWindow)
+                        }
+                        userLocationLayer?.isVisible = true
+                    } else {
+                        userLocationLayer?.isVisible = false
+                    }
+
+                    val icon = ImageProvider.fromResource(context, android.R.drawable.ic_menu_mylocation)
+                    state.requests.forEach { req ->
+                        val point = Point(req.location.latitude, req.location.longitude)
+                        val placemark = map.mapObjects.addPlacemark(point, icon, IconStyle().apply { scale = 1.0f })
+                        placemark.addTapListener(MapObjectTapListener { _, _ ->
+                            onSelect(req)
+                            true
+                        })
+                    }
+                }
+            )
+
+            Button(
+                onClick = { onRefresh(fallback.latitude, fallback.longitude) },
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)
+            ) {
+                Text(if (state.isLoading) "Обновляю..." else "Обновить")
+            }
+
+            state.error?.let {
+                LaunchedEffect(it) { snackbarHostState.showSnackbar(it) }
+            }
+        }
+    }
+
+    if (state.selected != null) {
+        ModalBottomSheet(
+            onDismissRequest = { onSelect(null) },
+            sheetState = sheetState
+        ) {
+            VolunteerRequestSheet(
+                item = state.selected,
+                onAccept = onAcceptSelected,
+                onClose = { onSelect(null) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun VolunteerRequestSheet(item: RequestSummaryDto, onAccept: () -> Unit, onClose: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Заявка", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Закрыть") }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(item.description, style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.height(8.dp))
+        Text("${"%.2f".format(item.distanceKm)} км от вас", color = Color.Gray)
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onAccept, modifier = Modifier.fillMaxWidth()) {
+            Text("Помогу")
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun VolunteerAcceptConfirmScreen(onBack: () -> Unit, onConfirm: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
+        Text("Подтверждение", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text("Подтвердите, что вы готовы помочь. После этого появятся контактные данные.", color = Color.Gray)
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) { Text("Подтвердить") }
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Назад") }
+    }
+}
+
+@Composable
+private fun VolunteerRequestDetailsScreen(state: VolunteerUiState, onBackToMap: () -> Unit) {
+    val details = state.acceptedDetails
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Контакты и детали", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(12.dp))
+        if (state.isLoading && details == null) {
+            CircularProgressIndicator()
+            return
+        }
+        if (details == null) {
+            Text("Не удалось загрузить данные заявки", color = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onBackToMap) { Text("Назад") }
+            return
+        }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text(details.description ?: "", style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(12.dp))
+                Text("Телефон подопечного", fontWeight = FontWeight.Medium)
+                Text(details.contactPhone ?: "Недоступно", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Text("Статус: ${details.status}", color = Color.Gray)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Button(onClick = onBackToMap, modifier = Modifier.fillMaxWidth()) { Text("Назад к карте") }
     }
 }
 
@@ -426,26 +750,111 @@ private fun StepOneScreen(
 }
 
 @Composable
-private fun AddressScreen(state: WardUiState, onApartmentChange: (String) -> Unit, onNext: () -> Unit) {
+private fun AddressScreen(
+    state: WardUiState,
+    onAddressPointChange: (Double, Double) -> Unit,
+    onNext: () -> Unit
+) {
+    val context = LocalContext.current
+    val mapView = remember { MapView(context) }
+    var mapInitialized by remember { mutableStateOf(false) }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            val fused = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
+            @Suppress("MissingPermission")
+            fused.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    val point = Point(location.latitude, location.longitude)
+                    mapView.mapWindow.map.move(CameraPosition(point, 16f, 0f, 0f))
+                    onAddressPointChange(location.latitude, location.longitude)
+                }
+            }
+        }
+    }
+
+    DisposableEffect(mapView) {
+        mapView.onStart()
+        onDispose { mapView.onStop() }
+    }
+
+    LaunchedEffect(Unit) {
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasPermission) {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        } else {
+            val fused = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
+            @Suppress("MissingPermission")
+            fused.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    mapView.mapWindow.map.move(CameraPosition(Point(location.latitude, location.longitude), 16f, 0f, 0f))
+                    onAddressPointChange(location.latitude, location.longitude)
+                }
+            }
+        }
+    }
+
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Проверьте Ваш адрес:", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("Проверьте Ваш адрес", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        Text(state.address, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(20.dp))
-        OutlinedTextField(
-            value = state.apartment,
-            onValueChange = onApartmentChange,
-            label = { Text("Номер квартиры") },
-            modifier = Modifier.fillMaxWidth()
+        Text(
+            "Передвиньте карту: маркер в центре должен стоять на вашем доме",
+            color = Color.Gray
+        )
+        Spacer(Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(280.dp)
+        ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { mapView },
+                update = {
+                    if (!mapInitialized) {
+                        it.mapWindow.map.move(CameraPosition(Point(state.latitude, state.longitude), 16f, 0f, 0f))
+                        mapInitialized = true
+                    }
+                }
+            )
+            Text(
+                "📍",
+                modifier = Modifier.align(Alignment.Center),
+                style = MaterialTheme.typography.headlineMedium
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("Текущая точка", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+        Text(
+            "${"%.5f".format(state.latitude)}, ${"%.5f".format(state.longitude)}",
+            style = MaterialTheme.typography.titleMedium
         )
         Spacer(Modifier.weight(1f))
-        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) { Text("Далее") }
+        Button(
+            onClick = {
+                val center = mapView.mapWindow.map.cameraPosition.target
+                onAddressPointChange(center.latitude, center.longitude)
+                onNext()
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Далее") }
     }
 }
 
 @Composable
 private fun ConfirmScreen(
     state: WardUiState,
+    onApartmentChange: (String) -> Unit,
     onCommentChange: (String) -> Unit,
     onCreate: () -> Unit
 ) {
@@ -457,12 +866,24 @@ private fun ConfirmScreen(
         SelectCard(title = state.urgency.title, selected = true, tint = Color(0xFFFFF2E5), onClick = {})
         Spacer(Modifier.height(12.dp))
         Text("По адресу", color = Color.Gray)
-        Text("${state.address}, кв. ${state.apartment}", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(16.dp))
+        Text(state.address, style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Координаты: ${"%.5f".format(state.latitude)}, ${"%.5f".format(state.longitude)}",
+            color = Color.Gray
+        )
+        Spacer(Modifier.height(14.dp))
+        OutlinedTextField(
+            value = state.apartment,
+            onValueChange = onApartmentChange,
+            label = { Text("Квартира / подъезд") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(12.dp))
         OutlinedTextField(
             value = state.comment,
             onValueChange = onCommentChange,
-            label = { Text("Комментарий к заявке") },
+            label = { Text("Примечание для волонтёра") },
             modifier = Modifier.fillMaxWidth().height(160.dp)
         )
         state.error?.let {
@@ -485,15 +906,15 @@ private fun ConfirmScreen(
 }
 
 @Composable
-private fun SearchingScreen(state: WardUiState, onReady: () -> Unit, onCancel: () -> Unit) {
+private fun SearchingScreen(state: WardUiState, onStartSearch: () -> Unit, onCancel: () -> Unit) {
     var seconds by remember { mutableStateOf(0) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        while (seconds < 8) {
+        while (true) {
             delay(1000)
             seconds++
         }
-        onReady()
     }
+    androidx.compose.runtime.LaunchedEffect(Unit) { onStartSearch() }
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center
@@ -519,7 +940,11 @@ private fun VolunteerFoundScreen(state: WardUiState, onCancel: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Text("Александр", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    state.assignedVolunteerId?.let { "Волонтёр: ${it.take(8)}..." } ?: "Волонтёр назначен",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
                 Text("${state.category.title}, ${state.address}", color = Color.Gray)
             }
         }

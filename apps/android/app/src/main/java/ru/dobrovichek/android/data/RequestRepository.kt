@@ -8,7 +8,9 @@ class RequestRepository(
         urgency: String,
         address: String,
         apartment: String,
-        comment: String
+        comment: String,
+        latitude: Double,
+        longitude: Double
     ): String {
         val description = buildString {
             append("Категория: ").append(category)
@@ -27,8 +29,8 @@ class RequestRepository(
                 description = description,
                 contactPhone = "+79990000000",
                 location = GeoPointDto(
-                    latitude = 60.0092,
-                    longitude = 30.3578
+                    latitude = latitude,
+                    longitude = longitude
                 )
             )
         )
@@ -37,5 +39,17 @@ class RequestRepository(
 
     suspend fun cancelRequest(requestId: String) {
         requestApi.cancelRequest(requestId)
+    }
+
+    suspend fun findNearby(latitude: Double, longitude: Double, radiusKm: Double = 1.0): List<RequestSummaryDto> {
+        return requestApi.findNearby(latitude = latitude, longitude = longitude, radiusKm = radiusKm)
+    }
+
+    suspend fun acceptRequest(requestId: String) {
+        requestApi.acceptRequest(requestId)
+    }
+
+    suspend fun getRequest(requestId: String): RequestResponseDto {
+        return requestApi.getById(requestId)
     }
 }

@@ -9,7 +9,9 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.POST
+import retrofit2.http.GET
 import retrofit2.http.Path
+import retrofit2.http.Query
 import ru.dobrovichek.android.BuildConfig
 
 data class GeoPointDto(
@@ -25,12 +27,41 @@ data class CreateRequestPayload(
 
 data class RequestResponseDto(
     val id: String,
-    val status: String
+    val wardId: String? = null,
+    val volunteerId: String? = null,
+    val description: String? = null,
+    val contactPhone: String? = null,
+    val location: GeoPointDto? = null,
+    val status: String,
+    val createdAt: String? = null
+)
+
+data class RequestSummaryDto(
+    val id: String,
+    val wardId: String,
+    val description: String,
+    val location: GeoPointDto,
+    val status: String,
+    val createdAt: String,
+    val distanceKm: Double
 )
 
 interface RequestApi {
     @POST("api/v1/requests")
     suspend fun createRequest(@Body payload: CreateRequestPayload): RequestResponseDto
+
+    @GET("api/v1/requests/nearby")
+    suspend fun findNearby(
+        @Query("latitude") latitude: Double,
+        @Query("longitude") longitude: Double,
+        @Query("radiusKm") radiusKm: Double = 1.0
+    ): List<RequestSummaryDto>
+
+    @POST("api/v1/requests/{requestId}/accept")
+    suspend fun acceptRequest(@Path("requestId") requestId: String): RequestResponseDto
+
+    @GET("api/v1/requests/{requestId}")
+    suspend fun getById(@Path("requestId") requestId: String): RequestResponseDto
 
     @POST("api/v1/requests/{requestId}/cancel")
     suspend fun cancelRequest(@Path("requestId") requestId: String): RequestResponseDto

@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+import java.util.Properties
+
 android {
     namespace = "ru.dobrovichek.android"
     compileSdk = 35
@@ -16,8 +18,12 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8083/\"")
-        buildConfigField("String", "IDENTITY_BASE_URL", "\"http://10.0.2.2:8081/\"")
+        // You can override these via apps/android/local.properties:
+        // REQUEST_BASE_URL=http://<your-pc-ip>:8083/
+        // IDENTITY_BASE_URL=http://<your-pc-ip>:8081/
+        buildConfigField("String", "BASE_URL", "\"${loadLocalProperty("REQUEST_BASE_URL").ifBlank { "http://10.0.2.2:8083/" }}\"")
+        buildConfigField("String", "IDENTITY_BASE_URL", "\"${loadLocalProperty("IDENTITY_BASE_URL").ifBlank { "http://10.0.2.2:8081/" }}\"")
+        buildConfigField("String", "MAPKIT_API_KEY", "\"${loadLocalProperty("MAPKIT_API_KEY")}\"")
     }
 
     buildTypes {
@@ -43,6 +49,14 @@ android {
     }
 }
 
+fun loadLocalProperty(key: String): String {
+    val propertiesFile = rootProject.file("local.properties")
+    if (!propertiesFile.exists()) return ""
+    val properties = Properties()
+    propertiesFile.inputStream().use { properties.load(it) }
+    return properties.getProperty(key, "")
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
 
@@ -64,6 +78,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
+
+    implementation("com.yandex.android:maps.mobile:4.33.1-lite")
+    implementation("com.google.android.gms:play-services-location:21.0.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

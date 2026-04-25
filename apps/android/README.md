@@ -23,9 +23,20 @@ The app uses `http://10.0.2.2:8083/` to access backend from emulator.
 - `POST /api/v1/auth/register` (register)
 - `POST /api/v1/auth/login` (login)
 - `POST /api/v1/requests` (create request)
+- `GET /api/v1/requests/nearby` (volunteer map)
+- `POST /api/v1/requests/{id}/accept` (volunteer accepts)
 - `POST /api/v1/requests/{id}/cancel` (cancel request)
 
 Request-service auth headers are passed from logged in user session:
 
 - `X-User-Id`
 - `X-User-Role`
+
+## Yandex MapKit
+
+Set your key in `apps/android/local.properties`:
+
+```properties
+sdk.dir=...
+MAPKIT_API_KEY=d951c797-ef61-4754-8551-3af65d1798b0
+```

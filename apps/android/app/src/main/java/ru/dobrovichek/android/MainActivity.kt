@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import com.yandex.mapkit.MapKitFactory
+import com.yandex.mapkit.MapKit
 import ru.dobrovichek.android.data.AuthApiFactory
 import ru.dobrovichek.android.data.AuthRepository
 import ru.dobrovichek.android.data.RequestApiFactory
@@ -13,7 +15,11 @@ import ru.dobrovichek.android.data.SessionStore
 import ru.dobrovichek.android.ui.WardApp
 
 class MainActivity : ComponentActivity() {
+    private val mapKit: MapKit by lazy { MapKitFactory.getInstance() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        MapKitFactory.setApiKey(BuildConfig.MAPKIT_API_KEY)
+        MapKitFactory.initialize(this)
         super.onCreate(savedInstanceState)
         val sessionStore = SessionStore(applicationContext)
         val authRepository = AuthRepository(AuthApiFactory.create(), sessionStore)
@@ -31,5 +37,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        mapKit.onStart()
+    }
+
+    override fun onStop() {
+        mapKit.onStop()
+        super.onStop()
     }
 }

@@ -31,3 +31,6 @@ out/
 # IDE
 .idea/
 *.iml
+
+# Android (local)
+**/local.properties

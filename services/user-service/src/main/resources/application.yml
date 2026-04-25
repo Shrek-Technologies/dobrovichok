@@ -12,10 +12,13 @@ spring:
     password: ${USER_DB_PASSWORD:dobrovichek}
   jpa:
     open-in-view: false
+    show-sql: true
     hibernate:
       ddl-auto: validate
     properties:
       hibernate:
+        format_sql: true
+        highlight_sql: true
         jdbc:
           time_zone: UTC
   liquibase:
