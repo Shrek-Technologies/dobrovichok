@@ -31,7 +31,8 @@ data class AuthResponseDto(
     val patronymic: String? = null,
     val fullName: String,
     val phone: String,
-    val role: String
+    val role: String,
+    val accessToken: String
 )
 
 interface AuthApi {

@@ -104,9 +104,9 @@ object UserApiFactory {
             val session = sessionProvider()
             val request = chain.request().newBuilder()
                 .apply {
-                    if (session != null) {
-                        addHeader("X-User-Id", session.userId)
-                        addHeader("X-User-Role", session.role)
+                    val token = session?.accessToken?.takeIf { it.isNotBlank() }
+                    if (token != null) {
+                        addHeader("Authorization", "Bearer $token")
                     }
                 }
                 .build()

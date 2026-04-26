@@ -39,4 +39,4 @@ If needed, override them with environment variables:
 Android app prototype is located in `apps/android`.
 
 Open `apps/android` as a standalone Gradle project in Android Studio and run it on an emulator.
-The app is preconfigured to call request-service at `http://10.0.2.2:8083/`.
+The app calls **api-gateway** at `http://10.0.2.2:8080/` (эмулятор). На телефоне в `local.properties`: `API_BASE_URL=http://<IP_ПК>:8080/`.

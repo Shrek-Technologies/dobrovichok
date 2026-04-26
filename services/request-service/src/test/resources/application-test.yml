@@ -15,5 +15,9 @@ spring:
     change-log: classpath:/db/changelog/db.changelog-master.xml
 
 dobrovichek:
+  jwt:
+    secret: test-test-test-test-test-test-test-test-32bytes!
+    issuer: dobrovichek
+    access-token-validity: PT1H
   messaging:
     enabled: false

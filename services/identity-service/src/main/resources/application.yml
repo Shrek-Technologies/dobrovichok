@@ -14,6 +14,22 @@ spring:
         jdbc:
           time_zone: UTC
 
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+  paths-to-match:
+    - /api/v1/**
+
+dobrovichek:
+  public-api-url: ${PUBLIC_API_URL:http://localhost:8080}
+  jwt:
+    secret: ${JWT_SECRET:dev-only-change-in-production-min-32-chars!!}
+    issuer: ${JWT_ISSUER:dobrovichek}
+    access-token-validity: ${JWT_ACCESS_TOKEN_VALIDITY:PT24H}
+
 server:
   port: 8081
   address: 0.0.0.0

@@ -6,12 +6,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.dobrovichek.contracts.UserRole;
-import ru.dobrovichek.request.infrastructure.persistence.HelpRequestJpaRepository;
-import ru.dobrovichek.security.ServiceHeaders;
+import ru.dobrovichek.jwt.JwtProperties;
+import ru.dobrovichek.jwt.JwtTokenIssuer;
+import ru.dobrovichek.request.repository.HelpRequestRepository;
 
 import java.util.Map;
 import java.util.UUID;
@@ -37,11 +39,18 @@ class RequestControllerIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
-    private HelpRequestJpaRepository repository;
+    private HelpRequestRepository repository;
+
+    @Autowired
+    private JwtProperties jwtProperties;
 
     @AfterEach
     void tearDown() {
         repository.deleteAll();
+    }
+
+    private String bearer(UUID userId, UserRole role) {
+        return "Bearer " + new JwtTokenIssuer(jwtProperties).createAccessToken(userId, role);
     }
 
     @Test
@@ -49,8 +58,7 @@ class RequestControllerIntegrationTest {
         mockMvc.perform(post("/api/v1/requests")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(createPayload()))
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.wardId").value(WARD_ID.toString()))
                 .andExpect(jsonPath("$.status").value("CREATED"))
@@ -62,8 +70,7 @@ class RequestControllerIntegrationTest {
         mockMvc.perform(post("/api/v1/requests")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(createPayload()))
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isForbidden());
     }
 
@@ -72,8 +79,7 @@ class RequestControllerIntegrationTest {
         String response = mockMvc.perform(post("/api/v1/requests")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(createPayload()))
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
@@ -82,8 +88,7 @@ class RequestControllerIntegrationTest {
         String requestId = objectMapper.readTree(response).get("id").asText();
 
         mockMvc.perform(post("/api/v1/requests/{requestId}/accept", requestId)
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACCEPTED"))
                 .andExpect(jsonPath("$.volunteerId").value(VOLUNTEER_ID.toString()))
@@ -95,8 +100,7 @@ class RequestControllerIntegrationTest {
         String requestId = createAndAcceptRequest();
 
         mockMvc.perform(post("/api/v1/requests/{requestId}/complete", requestId)
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
     }
@@ -106,8 +110,7 @@ class RequestControllerIntegrationTest {
         String requestId = createAndAcceptRequest();
 
         mockMvc.perform(get("/api/v1/requests/{requestId}", requestId)
-                        .header(ServiceHeaders.USER_ID, OTHER_VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(OTHER_VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isForbidden());
     }
 
@@ -116,8 +119,7 @@ class RequestControllerIntegrationTest {
         String createResponse = mockMvc.perform(post("/api/v1/requests")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(createPayload()))
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
@@ -125,8 +127,7 @@ class RequestControllerIntegrationTest {
         String requestId = objectMapper.readTree(createResponse).get("id").asText();
 
         mockMvc.perform(get("/api/v1/requests/active")
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(requestId))
                 .andExpect(jsonPath("$.status").value("CREATED"));
@@ -137,8 +138,7 @@ class RequestControllerIntegrationTest {
         String requestId = createAndAcceptRequest();
 
         mockMvc.perform(get("/api/v1/requests/active")
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(requestId))
                 .andExpect(jsonPath("$.status").value("ACCEPTED"));
@@ -147,8 +147,7 @@ class RequestControllerIntegrationTest {
     @Test
     void volunteerActiveReturns404WhenNothingAccepted() throws Exception {
         mockMvc.perform(get("/api/v1/requests/active")
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isNotFound());
     }
 
@@ -157,16 +156,14 @@ class RequestControllerIntegrationTest {
         mockMvc.perform(post("/api/v1/requests")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(createPayload()))
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/v1/requests/nearby")
                         .param("latitude", "59.9343")
                         .param("longitude", "30.3351")
                         .param("radiusKm", "1.0")
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].wardFirstName").value("Ольга"))
                 .andExpect(jsonPath("$[0].description").value("Need groceries"))
@@ -177,8 +174,7 @@ class RequestControllerIntegrationTest {
         String createResponse = mockMvc.perform(post("/api/v1/requests")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(createPayload()))
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
@@ -187,8 +183,7 @@ class RequestControllerIntegrationTest {
         String requestId = objectMapper.readTree(createResponse).get("id").asText();
 
         mockMvc.perform(post("/api/v1/requests/{requestId}/accept", requestId)
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isOk());
 
         return requestId;

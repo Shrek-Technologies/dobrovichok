@@ -9,15 +9,16 @@ import org.springframework.web.server.ResponseStatusException;
 import ru.dobrovichek.contracts.PersonNameFormat;
 import ru.dobrovichek.contracts.PhoneNormalizer;
 import ru.dobrovichek.contracts.UserRole;
-import ru.dobrovichek.identity.api.AuthResponse;
-import ru.dobrovichek.identity.api.LoginRequest;
-import ru.dobrovichek.identity.api.RegisterRequest;
+import ru.dobrovichek.identity.dto.AuthResponse;
+import ru.dobrovichek.identity.dto.LoginRequest;
+import ru.dobrovichek.identity.dto.RegisterRequest;
 import ru.dobrovichek.identity.exception.AuthConflictException;
 import ru.dobrovichek.identity.exception.AuthUnauthorizedException;
 import ru.dobrovichek.identity.repository.IdentityUserCredentialRepository;
 import ru.dobrovichek.identity.repository.IdentityUserProfileRepository;
 import ru.dobrovichek.identity.entity.UserCredentialEntity;
 import ru.dobrovichek.identity.entity.UserProfileEntity;
+import ru.dobrovichek.jwt.JwtTokenIssuer;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -28,15 +29,18 @@ public class AuthService {
     private final IdentityUserProfileRepository profileRepository;
     private final IdentityUserCredentialRepository credentialRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtTokenIssuer jwtTokenIssuer;
 
     public AuthService(
             IdentityUserProfileRepository profileRepository,
             IdentityUserCredentialRepository credentialRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            JwtTokenIssuer jwtTokenIssuer
     ) {
         this.profileRepository = profileRepository;
         this.credentialRepository = credentialRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtTokenIssuer = jwtTokenIssuer;
     }
 
     @Transactional
@@ -92,7 +96,7 @@ public class AuthService {
         return toResponse(profile);
     }
 
-    private static AuthResponse toResponse(UserProfileEntity profile) {
+    private AuthResponse toResponse(UserProfileEntity profile) {
         return new AuthResponse(
                 profile.getId(),
                 profile.getFirstName(),
@@ -100,7 +104,8 @@ public class AuthService {
                 profile.getPatronymic(),
                 PersonNameFormat.fullFormal(profile.getFirstName(), profile.getPatronymic(), profile.getLastName()),
                 profile.getPhone(),
-                profile.getRole()
+                profile.getRole(),
+                jwtTokenIssuer.createAccessToken(profile.getId(), profile.getRole())
         );
     }
 

@@ -16,13 +16,15 @@ Android client for the ward flow based on the provided references:
    - gateway routes to `identity-service` (8081), `user-service` (8082), `request-service` (8083)
 4. Run app on emulator.
 
-The app uses `http://10.0.2.2:8080/` to access backend from emulator.
+Эмулятор по умолчанию: `http://10.0.2.2:8080/` (только **api-gateway**).
 
-Optional override in `apps/android/local.properties`:
+В `apps/android/local.properties` при необходимости:
 
 ```properties
-API_BASE_URL=http://10.0.2.2:8080/
+API_BASE_URL=http://192.168.x.x:8080/
 ```
+
+Отдельные URL сервисов (8081/8082/8083) не задаются — маршрутизация на стороне gateway.
 
 ## Current API integration
 

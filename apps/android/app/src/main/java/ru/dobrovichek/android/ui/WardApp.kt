@@ -39,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -64,8 +65,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -590,7 +594,9 @@ class VolunteerViewModel(
     private var detailsWatchJob: Job? = null
 
     fun onVolunteerMapShown() {
-        _state.update { it.copy(nearbyEpoch = it.nearbyEpoch + 1) }
+        _state.update {
+            it.copy(selected = null, nearbyEpoch = it.nearbyEpoch + 1)
+        }
     }
 
     fun refreshNearby(latitude: Double, longitude: Double, showLoading: Boolean = true) {
@@ -674,7 +680,12 @@ class VolunteerViewModel(
                 .onSuccess {
                     stopDetailsWatcher()
                     _state.update {
-                        it.copy(isLoading = false, acceptedRequestId = null, acceptedDetails = null)
+                        it.copy(
+                            isLoading = false,
+                            selected = null,
+                            acceptedRequestId = null,
+                            acceptedDetails = null
+                        )
                     }
                     onSuccess()
                 }
@@ -876,7 +887,16 @@ fun WardApp(
                 }
             }
             composable("volunteer_map") {
-                LaunchedEffect(Unit) { volunteerVm.onVolunteerMapShown() }
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            volunteerVm.onVolunteerMapShown()
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
                 VolunteerMapScreen(
                     state = volunteerState,
                     onRefresh = { lat, lon -> volunteerVm.refreshNearby(lat, lon, showLoading = false) },
@@ -1106,6 +1126,11 @@ private fun VolunteerMapScreen(
     val mapView = remember { MapView(context) }
     val snackbarHostState = remember { SnackbarHostState() }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    LaunchedEffect(state.selected) {
+        if (state.selected == null && sheetState.currentValue != SheetValue.Hidden) {
+            sheetState.hide()
+        }
+    }
     var userLocationLayer: UserLocationLayer? by remember { mutableStateOf(null) }
     var currentLocation: Point? by remember { mutableStateOf(null) }
     var initialCameraFixApplied by remember { mutableStateOf(false) }

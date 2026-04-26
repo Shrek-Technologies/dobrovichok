@@ -45,7 +45,8 @@ class AuthRepository(
             lastName = lastName,
             patronymic = pat,
             fullName = fullName.ifBlank { PersonNameFormat.fullFormal(firstName, pat, lastName) },
-            phone = phone
+            phone = phone,
+            accessToken = accessToken
         )
     }
 }

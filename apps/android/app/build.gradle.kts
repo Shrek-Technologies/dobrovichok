@@ -19,8 +19,7 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // You can override this via apps/android/local.properties:
-        // API_BASE_URL=http://<your-pc-ip>:8080/
+        // apps/android/local.properties: API_BASE_URL=http://<LAN-IP>:8080/ (гейт; не 8081/8082/8083)
         buildConfigField("String", "API_BASE_URL", "\"${loadLocalProperty("API_BASE_URL").ifBlank { "http://10.0.2.2:8080/" }}\"")
         buildConfigField("String", "MAPKIT_API_KEY", "\"${loadLocalProperty("MAPKIT_API_KEY")}\"")
     }

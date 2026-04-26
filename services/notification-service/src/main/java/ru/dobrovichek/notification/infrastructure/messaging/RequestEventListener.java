@@ -7,7 +7,7 @@ import ru.dobrovichek.events.RequestCreatedEvent;
 import ru.dobrovichek.events.RequestEventTopology;
 import ru.dobrovichek.events.RequestStatusChangedEvent;
 import ru.dobrovichek.events.VolunteerAbandonedRequestEvent;
-import ru.dobrovichek.notification.application.NotificationDispatchService;
+import ru.dobrovichek.notification.service.NotificationDispatchService;
 
 @Component
 @ConditionalOnProperty(name = "dobrovichek.messaging.enabled", havingValue = "true", matchIfMissing = true)

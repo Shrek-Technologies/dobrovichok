@@ -8,20 +8,23 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.dobrovichek.contracts.RequestStatus;
 import ru.dobrovichek.contracts.UserRole;
 import ru.dobrovichek.events.RequestStatusChangedEvent;
-import ru.dobrovichek.security.ServiceHeaders;
-import ru.dobrovichek.user.application.VolunteerHistoryProjector;
-import ru.dobrovichek.user.infrastructure.persistence.VolunteerRatingJpaRepository;
-import ru.dobrovichek.user.infrastructure.persistence.UserProfileJpaRepository;
-import ru.dobrovichek.user.infrastructure.persistence.VolunteerRequestHistoryJpaRepository;
-import ru.dobrovichek.user.infrastructure.request.RequestRichSnapshot;
-import ru.dobrovichek.user.infrastructure.request.RequestServiceClient;
-import ru.dobrovichek.user.infrastructure.request.RequestSnapshot;
+import ru.dobrovichek.jwt.JwtProperties;
+import ru.dobrovichek.jwt.JwtTokenIssuer;
+import ru.dobrovichek.user.service.VolunteerHistoryProjector;
+import ru.dobrovichek.user.service.VolunteerRatingService;
+import ru.dobrovichek.user.repository.VolunteerRatingJpaRepository;
+import ru.dobrovichek.user.repository.UserProfileJpaRepository;
+import ru.dobrovichek.user.repository.VolunteerRequestHistoryJpaRepository;
+import ru.dobrovichek.user.dto.RequestRichSnapshot;
+import ru.dobrovichek.user.util.RequestServiceClient;
+import ru.dobrovichek.user.dto.RequestSnapshot;
 
 import java.time.Instant;
 import java.util.Map;
@@ -47,6 +50,8 @@ class UserControllerIntegrationTest {
     private static final UUID SECOND_WARD_ID = UUID.fromString("44444444-4444-4444-4444-444444444444");
     private static final UUID REQUEST_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID SECOND_REQUEST_ID = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private static final UUID ACCEPTED_THEN_ABANDONED_REQUEST_ID =
+            UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
     @Autowired
     private MockMvc mockMvc;
@@ -66,8 +71,18 @@ class UserControllerIntegrationTest {
     @Autowired
     private VolunteerRatingJpaRepository volunteerRatingRepository;
 
+    @Autowired
+    private VolunteerRatingService volunteerRatingService;
+
+    @Autowired
+    private JwtProperties jwtProperties;
+
     @MockBean
     private RequestServiceClient requestServiceClient;
+
+    private String bearer(UUID userId, UserRole role) {
+        return "Bearer " + new JwtTokenIssuer(jwtProperties).createAccessToken(userId, role);
+    }
 
     @BeforeEach
     void stubRequestServiceClient() {
@@ -125,8 +140,7 @@ class UserControllerIntegrationTest {
     @Test
     void getMyProfileCreatesShellFromHeaders() throws Exception {
         mockMvc.perform(get("/api/v1/users/me")
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(WARD_ID.toString()))
                 .andExpect(jsonPath("$.role").value("WARD"))
@@ -147,8 +161,7 @@ class UserControllerIntegrationTest {
                                 "bio", "Experienced volunteer",
                                 "city", "Moscow"
                         )))
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(VOLUNTEER_ID.toString()))
                 .andExpect(jsonPath("$.role").value("VOLUNTEER"))
@@ -159,8 +172,7 @@ class UserControllerIntegrationTest {
                 .andExpect(jsonPath("$.city").value("Moscow"));
 
         mockMvc.perform(get("/api/v1/users/me")
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.firstName").value("Ivan"))
                 .andExpect(jsonPath("$.lastName").value("Petrov"))
@@ -180,15 +192,13 @@ class UserControllerIntegrationTest {
                                 "bio", "Volunteer driver",
                                 "city", "Saint Petersburg"
                         )))
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isOk());
 
         projectCompletedRequests();
 
         mockMvc.perform(get("/api/v1/volunteers/{volunteerId}", VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(VOLUNTEER_ID.toString()))
                 .andExpect(jsonPath("$.firstName").value("Elena"))
@@ -197,8 +207,7 @@ class UserControllerIntegrationTest {
                 .andExpect(jsonPath("$.completedRequestsCount").value(2));
 
         mockMvc.perform(get("/api/v1/volunteers/{volunteerId}/requests/history", VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].requestId").value(SECOND_REQUEST_ID.toString()))
                 .andExpect(jsonPath("$[0].wardId").value(SECOND_WARD_ID.toString()))
@@ -218,8 +227,7 @@ class UserControllerIntegrationTest {
                                 "bio", "Volunteer driver",
                                 "city", "Saint Petersburg"
                         )))
-                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
                 .andExpect(status().isOk());
 
         projectCompletedRequests();
@@ -230,8 +238,7 @@ class UserControllerIntegrationTest {
                                 "requestId", REQUEST_ID,
                                 "score", 4
                         )))
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requestId").value(REQUEST_ID.toString()))
                 .andExpect(jsonPath("$.score").value(4));
@@ -242,18 +249,81 @@ class UserControllerIntegrationTest {
                                 "requestId", SECOND_REQUEST_ID,
                                 "score", 5
                         )))
-                        .header(ServiceHeaders.USER_ID, SECOND_WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(SECOND_WARD_ID, UserRole.WARD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requestId").value(SECOND_REQUEST_ID.toString()))
                 .andExpect(jsonPath("$.score").value(5));
 
         mockMvc.perform(get("/api/v1/volunteers/{volunteerId}", VOLUNTEER_ID)
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rating").value(4.5))
                 .andExpect(jsonPath("$.ratingCount").value(2));
+    }
+
+    @Test
+    void volunteerAbandonmentMultipliesStoredRatingAndSkipsDuplicateEvents() throws Exception {
+        mockMvc.perform(put("/api/v1/users/me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "firstName", "Elena",
+                                "lastName", "Smirnova",
+                                "patronymic", "",
+                                "phone", "+79991111111",
+                                "bio", "Volunteer driver",
+                                "city", "Saint Petersburg"
+                        )))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
+                .andExpect(status().isOk());
+
+        projectCompletedRequests();
+
+        mockMvc.perform(post("/api/v1/volunteers/{volunteerId}/ratings", VOLUNTEER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "requestId", REQUEST_ID,
+                                "score", 5
+                        )))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isOk());
+
+        volunteerHistoryProjector.project(new RequestStatusChangedEvent(
+                ACCEPTED_THEN_ABANDONED_REQUEST_ID,
+                WARD_ID,
+                VOLUNTEER_ID,
+                RequestStatus.ACCEPTED,
+                Instant.parse("2026-04-23T16:00:00Z")
+        ));
+
+        mockMvc.perform(get("/api/v1/volunteers/{volunteerId}", VOLUNTEER_ID)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rating").value(5.0))
+                .andExpect(jsonPath("$.ratingCount").value(1));
+
+        volunteerRatingService.applyAbandonmentPenalty(
+                VOLUNTEER_ID,
+                ACCEPTED_THEN_ABANDONED_REQUEST_ID,
+                WARD_ID
+        );
+
+        mockMvc.perform(get("/api/v1/volunteers/{volunteerId}", VOLUNTEER_ID)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rating").value(4.0))
+                .andExpect(jsonPath("$.ratingCount").value(1));
+
+        volunteerRatingService.applyAbandonmentPenalty(
+                VOLUNTEER_ID,
+                ACCEPTED_THEN_ABANDONED_REQUEST_ID,
+                WARD_ID
+        );
+
+        mockMvc.perform(get("/api/v1/volunteers/{volunteerId}", VOLUNTEER_ID)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rating").value(4.0))
+                .andExpect(jsonPath("$.ratingCount").value(1));
     }
 
     @Test
@@ -266,8 +336,7 @@ class UserControllerIntegrationTest {
                                 "requestId", REQUEST_ID,
                                 "score", 5
                         )))
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/volunteers/{volunteerId}/ratings", VOLUNTEER_ID)
@@ -276,8 +345,7 @@ class UserControllerIntegrationTest {
                                 "requestId", REQUEST_ID,
                                 "score", 4
                         )))
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isConflict());
 
         mockMvc.perform(post("/api/v1/volunteers/{volunteerId}/ratings", VOLUNTEER_ID)
@@ -286,8 +354,7 @@ class UserControllerIntegrationTest {
                                 "requestId", SECOND_REQUEST_ID,
                                 "score", 4
                         )))
-                        .header(ServiceHeaders.USER_ID, WARD_ID)
-                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
                 .andExpect(status().isForbidden());
     }
 
