@@ -36,8 +36,12 @@ class UserRepository(private val userApi: UserApi) {
             } catch (e: HttpException) {
                 if (e.code() != 409) throw e
                 val body = e.response()?.errorBody()?.use { it.string() }.orEmpty()
-                if (body.contains("already exists", ignoreCase = true)) throw e
-                if (attempt == 14) throw e
+                if (body.contains("already exists", ignoreCase = true)) {
+                    throw VolunteerRatingHttpException(409, body, e)
+                }
+                if (attempt == 14) {
+                    throw VolunteerRatingHttpException(409, body, e)
+                }
                 delay(waitMs)
                 waitMs = minOf(waitMs * 4 / 3, 2_000L)
             }
@@ -60,4 +64,10 @@ class UserRepository(private val userApi: UserApi) {
         val phone = p.phone?.trim()?.takeIf { it.isNotEmpty() }
         return display to phone
     }
+
+    suspend fun getVolunteerProfile(volunteerId: String): VolunteerProfileDto =
+        userApi.getVolunteerProfile(volunteerId)
+
+    suspend fun getVolunteerRequestHistory(volunteerId: String): List<VolunteerRequestHistoryItemDto> =
+        userApi.getVolunteerRequestHistory(volunteerId)
 }

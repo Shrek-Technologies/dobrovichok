@@ -19,6 +19,7 @@ import ru.dobrovichek.user.application.VolunteerHistoryProjector;
 import ru.dobrovichek.user.infrastructure.persistence.VolunteerRatingJpaRepository;
 import ru.dobrovichek.user.infrastructure.persistence.UserProfileJpaRepository;
 import ru.dobrovichek.user.infrastructure.persistence.VolunteerRequestHistoryJpaRepository;
+import ru.dobrovichek.user.infrastructure.request.RequestRichSnapshot;
 import ru.dobrovichek.user.infrastructure.request.RequestServiceClient;
 import ru.dobrovichek.user.infrastructure.request.RequestSnapshot;
 
@@ -100,6 +101,17 @@ class UserControllerIntegrationTest {
                         RequestStatus.COMPLETED,
                         accepted2,
                         completed2
+                )));
+
+        when(requestServiceClient.getRequestAsVolunteer(eq(REQUEST_ID), eq(VOLUNTEER_ID)))
+                .thenReturn(Optional.of(new RequestRichSnapshot(
+                        REQUEST_ID,
+                        "Категория: Доставка\nСрочность: Сейчас\nАдрес: ул. Пример, 1\n"
+                )));
+        when(requestServiceClient.getRequestAsVolunteer(eq(SECOND_REQUEST_ID), eq(VOLUNTEER_ID)))
+                .thenReturn(Optional.of(new RequestRichSnapshot(
+                        SECOND_REQUEST_ID,
+                        "Категория: Настройка техники\nСрочность: Сейчас\nАдрес: пр-т Тестовый, 2\n"
                 )));
     }
 

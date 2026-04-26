@@ -14,7 +14,7 @@ import org.springframework.http.HttpStatus;
 import ru.dobrovichek.user.application.UserProfileMapper;
 import ru.dobrovichek.user.application.UserProfileService;
 import ru.dobrovichek.user.application.VolunteerRatingService;
-import ru.dobrovichek.user.application.VolunteerHistoryProjector;
+import ru.dobrovichek.user.application.VolunteerRequestHistoryAssembler;
 
 import java.util.List;
 import java.util.UUID;
@@ -25,18 +25,18 @@ import java.util.UUID;
 public class UserController {
 
     private final UserProfileService userProfileService;
-    private final VolunteerHistoryProjector volunteerHistoryProjector;
+    private final VolunteerRequestHistoryAssembler volunteerRequestHistoryAssembler;
     private final VolunteerRatingService volunteerRatingService;
     private final UserProfileMapper mapper;
 
     public UserController(
             UserProfileService userProfileService,
-            VolunteerHistoryProjector volunteerHistoryProjector,
+            VolunteerRequestHistoryAssembler volunteerRequestHistoryAssembler,
             VolunteerRatingService volunteerRatingService,
             UserProfileMapper mapper
     ) {
         this.userProfileService = userProfileService;
-        this.volunteerHistoryProjector = volunteerHistoryProjector;
+        this.volunteerRequestHistoryAssembler = volunteerRequestHistoryAssembler;
         this.volunteerRatingService = volunteerRatingService;
         this.mapper = mapper;
     }
@@ -71,9 +71,7 @@ public class UserController {
     @GetMapping("/volunteers/{volunteerId}/requests/history")
     public List<VolunteerRequestHistoryResponse> getVolunteerHistory(@PathVariable UUID volunteerId) {
         userProfileService.ensureVolunteerExists(volunteerId);
-        return volunteerHistoryProjector.findCompletedRequests(volunteerId).stream()
-                .map(mapper::toVolunteerRequestHistoryResponse)
-                .toList();
+        return volunteerRequestHistoryAssembler.completedForVolunteer(volunteerId);
     }
 
     @PostMapping("/volunteers/{volunteerId}/ratings")

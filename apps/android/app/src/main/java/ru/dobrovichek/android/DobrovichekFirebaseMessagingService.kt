@@ -3,8 +3,6 @@ package ru.dobrovichek.android
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.core.app.NotificationCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ProcessLifecycleOwner
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -14,6 +12,7 @@ import kotlinx.coroutines.launch
 import ru.dobrovichek.android.data.SessionStore
 import ru.dobrovichek.android.data.UserApiFactory
 import ru.dobrovichek.android.data.UserRepository
+import ru.dobrovichek.android.util.AppVisibility
 
 class DobrovichekFirebaseMessagingService : FirebaseMessagingService() {
 
@@ -31,7 +30,7 @@ class DobrovichekFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        val inForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        val inForeground = AppVisibility.isInForeground(this)
         if (inForeground) {
             return
         }

@@ -47,6 +47,19 @@ data class VolunteerProfileDto(
     val completedRequestsCount: Int? = null
 )
 
+data class VolunteerRequestHistoryItemDto(
+    val requestId: String,
+    val wardId: String,
+    val status: String,
+    val acceptedAt: String? = null,
+    val completedAt: String? = null,
+    val cancelledAt: String? = null,
+    val updatedAt: String? = null,
+    val category: String? = null,
+    val address: String? = null,
+    val wardRating: Int? = null
+)
+
 data class CreateVolunteerRatingPayload(
     val requestId: String,
     val score: Int
@@ -65,6 +78,9 @@ interface UserApi {
 
     @GET("api/v1/volunteers/{volunteerId}")
     suspend fun getVolunteerProfile(@Path("volunteerId") volunteerId: String): VolunteerProfileDto
+
+    @GET("api/v1/volunteers/{volunteerId}/requests/history")
+    suspend fun getVolunteerRequestHistory(@Path("volunteerId") volunteerId: String): List<VolunteerRequestHistoryItemDto>
 
     @POST("api/v1/volunteers/{volunteerId}/ratings")
     suspend fun createVolunteerRating(
@@ -108,7 +124,7 @@ object UserApiFactory {
             .build()
 
         return Retrofit.Builder()
-            .baseUrl(BuildConfig.USER_BASE_URL)
+            .baseUrl(BuildConfig.API_BASE_URL)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .client(client)
             .build()

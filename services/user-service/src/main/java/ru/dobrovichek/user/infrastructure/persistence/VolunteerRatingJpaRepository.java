@@ -5,9 +5,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.dobrovichek.user.domain.VolunteerRating;
 
+import java.util.Optional;
 import java.util.UUID;
 
 public interface VolunteerRatingJpaRepository extends JpaRepository<VolunteerRating, UUID> {
+
+    Optional<VolunteerRating> findByRequestId(UUID requestId);
 
     boolean existsByRequestId(UUID requestId);
 

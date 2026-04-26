@@ -12,11 +12,17 @@ Android client for the ward flow based on the provided references:
 1. Open `apps/android` as a separate project in Android Studio.
 2. Sync Gradle.
 3. Start backend:
-   - `identity-service` on `http://localhost:8081`
-   - `request-service` on `http://localhost:8083`
+   - `api-gateway` on `http://localhost:8080`
+   - gateway routes to `identity-service` (8081), `user-service` (8082), `request-service` (8083)
 4. Run app on emulator.
 
-The app uses `http://10.0.2.2:8083/` to access backend from emulator.
+The app uses `http://10.0.2.2:8080/` to access backend from emulator.
+
+Optional override in `apps/android/local.properties`:
+
+```properties
+API_BASE_URL=http://10.0.2.2:8080/
+```
 
 ## Current API integration
 

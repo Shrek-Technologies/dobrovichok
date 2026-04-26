@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import ru.dobrovichek.contracts.PersonNameFormat;
+import ru.dobrovichek.contracts.PhoneNormalizer;
 import ru.dobrovichek.contracts.UserRole;
 
 import java.math.BigDecimal;
@@ -98,7 +99,7 @@ public class UserProfile {
         this.lastName = Objects.requireNonNull(lastName).trim();
         this.patronymic = normalize(patronymic);
         this.fullName = PersonNameFormat.fullFormal(this.firstName, this.patronymic, this.lastName);
-        this.phone = Objects.requireNonNull(phone).trim();
+        this.phone = PhoneNormalizer.normalize(Objects.requireNonNull(phone).trim());
         this.bio = normalize(bio);
         this.city = normalize(city);
         this.updatedAt = now;

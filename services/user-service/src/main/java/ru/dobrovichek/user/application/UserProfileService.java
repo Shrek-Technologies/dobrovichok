@@ -2,11 +2,13 @@ package ru.dobrovichek.user.application;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.dobrovichek.contracts.PhoneNormalizer;
 import ru.dobrovichek.contracts.UserRole;
 import ru.dobrovichek.user.api.CurrentUser;
 import ru.dobrovichek.user.api.RegisterDeviceRequest;
 import ru.dobrovichek.user.api.UpdateMyProfileRequest;
 import ru.dobrovichek.user.domain.UserProfile;
+import ru.dobrovichek.user.infrastructure.persistence.UserCredentialJpaRepository;
 import ru.dobrovichek.user.infrastructure.persistence.UserProfileJpaRepository;
 
 import java.time.Clock;
@@ -18,10 +20,16 @@ import java.util.UUID;
 public class UserProfileService {
 
     private final UserProfileJpaRepository userProfileRepository;
+    private final UserCredentialJpaRepository userCredentialRepository;
     private final Clock clock;
 
-    public UserProfileService(UserProfileJpaRepository userProfileRepository, Clock clock) {
+    public UserProfileService(
+            UserProfileJpaRepository userProfileRepository,
+            UserCredentialJpaRepository userCredentialRepository,
+            Clock clock
+    ) {
         this.userProfileRepository = userProfileRepository;
+        this.userCredentialRepository = userCredentialRepository;
         this.clock = clock;
     }
 
@@ -48,7 +56,12 @@ public class UserProfileService {
                 request.city(),
                 Instant.now(clock)
         );
-        return userProfileRepository.save(profile);
+        UserProfile saved = userProfileRepository.save(profile);
+        userCredentialRepository.findById(saved.getId()).ifPresent(credential -> {
+            credential.updatePhoneNormalized(PhoneNormalizer.normalize(saved.getPhone()));
+            userCredentialRepository.save(credential);
+        });
+        return saved;
     }
 
     @Transactional

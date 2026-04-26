@@ -48,7 +48,12 @@ public class UserProfileMapper {
         );
     }
 
-    public VolunteerRequestHistoryResponse toVolunteerRequestHistoryResponse(VolunteerRequestHistory history) {
+    public VolunteerRequestHistoryResponse toVolunteerRequestHistoryResponse(
+            VolunteerRequestHistory history,
+            String category,
+            String address,
+            Integer wardRating
+    ) {
         return new VolunteerRequestHistoryResponse(
                 history.getRequestId(),
                 history.getWardId(),
@@ -56,7 +61,10 @@ public class UserProfileMapper {
                 history.getAcceptedAt(),
                 history.getCompletedAt(),
                 history.getCancelledAt(),
-                history.getUpdatedAt()
+                history.getUpdatedAt(),
+                category,
+                address,
+                wardRating
         );
     }
 

@@ -1,13 +1,14 @@
 package ru.dobrovichek.identity.api;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import ru.dobrovichek.identity.application.AuthConflictException;
-import ru.dobrovichek.identity.application.AuthUnauthorizedException;
+import ru.dobrovichek.identity.exception.AuthConflictException;
+import ru.dobrovichek.identity.exception.AuthUnauthorizedException;
 
 import java.time.Instant;
 
@@ -27,6 +28,12 @@ public class RestExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException exception, HttpServletRequest request) {
         return ResponseEntity.badRequest().body(error(HttpStatus.BAD_REQUEST, "Некорректные данные", request));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrity(DataIntegrityViolationException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(error(HttpStatus.CONFLICT, "Пользователь с таким телефоном уже существует", request));
     }
 
     private ApiErrorResponse error(HttpStatus status, String message, HttpServletRequest request) {

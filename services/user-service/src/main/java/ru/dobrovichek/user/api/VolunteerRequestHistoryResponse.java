@@ -12,6 +12,9 @@ public record VolunteerRequestHistoryResponse(
         Instant acceptedAt,
         Instant completedAt,
         Instant cancelledAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String category,
+        String address,
+        Integer wardRating
 ) {
 }

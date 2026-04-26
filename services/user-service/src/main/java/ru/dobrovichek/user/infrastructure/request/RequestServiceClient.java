@@ -27,6 +27,31 @@ public class RequestServiceClient {
     }
 
     /**
+     * Читает заявку от имени назначенного волонтёра (для истории в профиле).
+     */
+    public Optional<RequestRichSnapshot> getRequestAsVolunteer(UUID requestId, UUID volunteerId) {
+        try {
+            RequestRichSnapshot body = restClient.get()
+                    .uri("/api/v1/requests/{requestId}", requestId)
+                    .header(ServiceHeaders.USER_ID, volunteerId.toString())
+                    .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name())
+                    .retrieve()
+                    .body(RequestRichSnapshot.class);
+            return Optional.ofNullable(body);
+        } catch (RestClientResponseException e) {
+            int code = e.getStatusCode().value();
+            if (code == 404 || code == 403) {
+                return Optional.empty();
+            }
+            log.warn("request-service GET /requests/{} (volunteer) failed: {} {}", requestId, code, e.getResponseBodyAsString());
+            throw e;
+        } catch (RestClientException e) {
+            log.warn("request-service unreachable for request {} (volunteer)", requestId, e);
+            throw e;
+        }
+    }
+
+    /**
      * Читает заявку от имени подопечного (тот же доступ, что у клиента при оценке).
      */
     public Optional<RequestSnapshot> getRequestAsWard(UUID requestId, UUID wardId) {

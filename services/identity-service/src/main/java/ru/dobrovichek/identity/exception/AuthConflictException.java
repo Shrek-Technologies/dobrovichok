@@ -1,4 +1,4 @@
-package ru.dobrovichek.identity.application;
+package ru.dobrovichek.identity.exception;
 
 public class AuthConflictException extends RuntimeException {
     public AuthConflictException(String message) {
