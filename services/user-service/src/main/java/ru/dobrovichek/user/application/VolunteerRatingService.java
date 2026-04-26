@@ -2,6 +2,7 @@ package ru.dobrovichek.user.application;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientException;
 import ru.dobrovichek.contracts.RequestStatus;
 import ru.dobrovichek.contracts.UserRole;
 import ru.dobrovichek.user.api.CreateVolunteerRatingRequest;
@@ -48,26 +49,18 @@ public class VolunteerRatingService {
         this.clock = clock;
     }
 
+    /**
+     * Оценка разрешена только если заявка в request-service в статусе COMPLETED для этого подопечного и волонтёра.
+     * Локальная volunteer_request_history — проекция для списков; не источник истины для этого сценария.
+     */
     @Transactional
     public VolunteerRating create(CurrentUser currentUser, UUID volunteerId, CreateVolunteerRatingRequest request) {
         requireWard(currentUser);
         userProfileService.ensureVolunteerExists(volunteerId);
 
-        VolunteerRequestHistory history = volunteerRequestHistoryRepository.findById(request.requestId())
-                .orElse(null);
-        if (history == null || history.getStatus() != RequestStatus.COMPLETED) {
-            history = reconcileHistoryWithRequestService(history, request.requestId(), volunteerId, currentUser.userId());
-        }
+        RequestSnapshot live = fetchRequestOrThrow(request.requestId(), currentUser.userId());
+        assertRatingAllowed(live, volunteerId, currentUser.userId());
 
-        if (!history.getVolunteerId().equals(volunteerId)) {
-            throw new ConflictException("Rating request does not belong to the specified volunteer");
-        }
-        if (history.getStatus() != RequestStatus.COMPLETED) {
-            throw new ConflictException("Rating can be left only for completed requests");
-        }
-        if (!history.getWardId().equals(currentUser.userId())) {
-            throw new ForbiddenException("You can rate only your own completed requests");
-        }
         if (volunteerRatingRepository.existsByRequestIdAndVolunteerId(request.requestId(), volunteerId)) {
             throw new ConflictException("Rating for this request already exists");
         }
@@ -81,7 +74,33 @@ public class VolunteerRatingService {
         );
         VolunteerRating saved = volunteerRatingRepository.save(rating);
         refreshVolunteerRating(volunteerId, saved.getCreatedAt());
+        syncVolunteerRequestHistory(live, volunteerId);
         return saved;
+    }
+
+    private RequestSnapshot fetchRequestOrThrow(UUID requestId, UUID wardId) {
+        try {
+            return requestServiceClient.getRequestAsWard(requestId, wardId)
+                    .orElseThrow(() -> new ConflictException("Request not found or access denied"));
+        } catch (RestClientException e) {
+            throw new ConflictException(
+                    "Cannot reach request-service to verify the request. "
+                            + "Set dobrovichek.request-service.base-url (e.g. REQUEST_SERVICE_BASE_URL) so user-service can call it.",
+                    e
+            );
+        }
+    }
+
+    private static void assertRatingAllowed(RequestSnapshot live, UUID volunteerId, UUID wardId) {
+        if (live.status() != RequestStatus.COMPLETED) {
+            throw new ConflictException("Rating can be left only for completed requests");
+        }
+        if (live.volunteerId() == null || !live.volunteerId().equals(volunteerId)) {
+            throw new ConflictException("Rating request does not belong to the specified volunteer");
+        }
+        if (!live.wardId().equals(wardId)) {
+            throw new ForbiddenException("You can rate only your own completed requests");
+        }
     }
 
     private void refreshVolunteerRating(UUID volunteerId, Instant now) {
@@ -120,28 +139,12 @@ public class VolunteerRatingService {
         }
     }
 
-    /**
-     * Проекция volunteer_request_history обновляется по RabbitMQ с задержкой; перед оценкой подтягиваем факт из request-service.
-     */
-    private VolunteerRequestHistory reconcileHistoryWithRequestService(
-            VolunteerRequestHistory existing,
-            UUID requestId,
-            UUID volunteerId,
-            UUID wardId
-    ) {
-        RequestSnapshot live = requestServiceClient.getRequestAsWard(requestId, wardId)
-                .orElseThrow(() -> new ConflictException("Completed request history not found for rating"));
-        if (live.status() != RequestStatus.COMPLETED) {
-            throw new ConflictException("Rating can be left only for completed requests");
-        }
-        if (live.volunteerId() == null || !live.volunteerId().equals(volunteerId)) {
-            throw new ConflictException("Rating request does not belong to the specified volunteer");
-        }
-        if (!live.wardId().equals(wardId)) {
-            throw new ForbiddenException("You can rate only your own completed requests");
-        }
+    /** Подтягивает read-model истории; счётчик завершённых у волонтёра — только при первом переходе в COMPLETED. */
+    private void syncVolunteerRequestHistory(RequestSnapshot live, UUID volunteerId) {
+        UUID requestId = live.id();
+        UUID wardId = live.wardId();
         Instant completedAt = live.completedAt() != null ? live.completedAt() : Instant.now(clock);
-        VolunteerRequestHistory row = existing;
+        VolunteerRequestHistory row = volunteerRequestHistoryRepository.findById(requestId).orElse(null);
         if (row == null) {
             Instant acceptedAt = live.acceptedAt() != null ? live.acceptedAt() : completedAt.minusSeconds(1);
             row = VolunteerRequestHistory.create(requestId, volunteerId, wardId, acceptedAt);
@@ -154,6 +157,5 @@ public class VolunteerRatingService {
             volunteer.registerCompletedRequest(completedAt);
             userProfileRepository.save(volunteer);
         }
-        return row;
     }
 }

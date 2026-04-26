@@ -2,10 +2,12 @@ package ru.dobrovichek.user;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -17,10 +19,16 @@ import ru.dobrovichek.user.application.VolunteerHistoryProjector;
 import ru.dobrovichek.user.infrastructure.persistence.VolunteerRatingJpaRepository;
 import ru.dobrovichek.user.infrastructure.persistence.UserProfileJpaRepository;
 import ru.dobrovichek.user.infrastructure.persistence.VolunteerRequestHistoryJpaRepository;
+import ru.dobrovichek.user.infrastructure.request.RequestServiceClient;
+import ru.dobrovichek.user.infrastructure.request.RequestSnapshot;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -56,6 +64,44 @@ class UserControllerIntegrationTest {
 
     @Autowired
     private VolunteerRatingJpaRepository volunteerRatingRepository;
+
+    @MockBean
+    private RequestServiceClient requestServiceClient;
+
+    @BeforeEach
+    void stubRequestServiceClient() {
+        Instant accepted1 = Instant.parse("2026-04-23T12:00:00Z");
+        Instant completed1 = Instant.parse("2026-04-23T13:00:00Z");
+        Instant accepted2 = Instant.parse("2026-04-23T14:00:00Z");
+        Instant completed2 = Instant.parse("2026-04-23T15:00:00Z");
+        when(requestServiceClient.getRequestAsWard(eq(REQUEST_ID), eq(WARD_ID)))
+                .thenReturn(Optional.of(new RequestSnapshot(
+                        REQUEST_ID,
+                        WARD_ID,
+                        VOLUNTEER_ID,
+                        RequestStatus.COMPLETED,
+                        accepted1,
+                        completed1
+                )));
+        when(requestServiceClient.getRequestAsWard(eq(SECOND_REQUEST_ID), eq(SECOND_WARD_ID)))
+                .thenReturn(Optional.of(new RequestSnapshot(
+                        SECOND_REQUEST_ID,
+                        SECOND_WARD_ID,
+                        VOLUNTEER_ID,
+                        RequestStatus.COMPLETED,
+                        accepted2,
+                        completed2
+                )));
+        when(requestServiceClient.getRequestAsWard(eq(SECOND_REQUEST_ID), eq(WARD_ID)))
+                .thenReturn(Optional.of(new RequestSnapshot(
+                        SECOND_REQUEST_ID,
+                        SECOND_WARD_ID,
+                        VOLUNTEER_ID,
+                        RequestStatus.COMPLETED,
+                        accepted2,
+                        completed2
+                )));
+    }
 
     @AfterEach
     void tearDown() {

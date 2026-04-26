@@ -49,6 +49,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Box
@@ -1031,10 +1032,24 @@ fun WardApp(
                                             409 -> when {
                                                 body.contains("already exists", ignoreCase = true) ->
                                                     "Вы уже оценили эту заявку"
+                                                body.contains(
+                                                    "Rating can be left only for completed",
+                                                    ignoreCase = true
+                                                ) ->
+                                                    "Оценку можно оставить только после завершения заявки."
+                                                body.contains(
+                                                    "does not belong to the specified volunteer",
+                                                    ignoreCase = true
+                                                ) ->
+                                                    "Эта заявка не относится к выбранному волонтёру."
+                                                body.contains("not found or access denied", ignoreCase = true) ->
+                                                    "Заявка не найдена или нет доступа."
+                                                body.contains("Cannot reach request-service", ignoreCase = true) ->
+                                                    "Сервис заявок недоступен. Проверьте настройки бэкенда."
                                                 body.contains("not found", ignoreCase = true) ->
-                                                    "Сервис не успел обновить заявку. Проверьте, что RabbitMQ запущен и user-service подписан на события."
+                                                    "Заявка не найдена или ещё не синхронизирована."
                                                 else ->
-                                                    "Заявка ещё не помечена завершённой в профиле. Попробуйте отправить оценку ещё раз."
+                                                    "Не удалось сохранить оценку. Попробуйте позже."
                                             }
                                             403 -> "Оценку могут оставить только подопечные по своей заявке."
                                             400 -> "Некорректные данные оценки."
@@ -1072,11 +1087,6 @@ private fun VolunteerMapScreen(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
-    DisposableEffect(mapView) {
-        mapView.onStart()
-        onDispose { mapView.onStop() }
-    }
-
     val fallback = remember { Point(60.0092, 30.3578) }
     val pinBitmap: Bitmap? = remember {
         runCatching {
@@ -1086,9 +1096,44 @@ private fun VolunteerMapScreen(
     }
 
     var markersCollection: MapObjectCollection? by remember { mutableStateOf(null) }
-    var markersKey: String by remember { mutableStateOf("") }
+    DisposableEffect(mapView) {
+        mapView.onStart()
+        onDispose {
+            markersCollection?.clear()
+            markersCollection = null
+            mapView.onStop()
+        }
+    }
+    val selectRequest = rememberUpdatedState(onSelect)
 
     val fusedClient = remember { com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context) }
+
+    val requestsMarkerKey = state.requests
+        .map { "${it.id}:${it.status}" }
+        .sorted()
+        .joinToString("|")
+
+    LaunchedEffect(mapView, state.nearbyEpoch, requestsMarkerKey) {
+        val map = mapView.mapWindow.map
+        if (markersCollection == null) {
+            markersCollection = map.mapObjects.addCollection()
+        }
+        val coll = markersCollection ?: return@LaunchedEffect
+        coll.clear()
+        val icon = pinBitmap?.let { ImageProvider.fromBitmap(it) }
+        state.requests.forEach { req ->
+            val point = Point(req.location.latitude, req.location.longitude)
+            val placemark = if (icon != null) {
+                coll.addPlacemark(point, icon, IconStyle().apply { scale = 1.5f })
+            } else {
+                coll.addPlacemark(point)
+            }
+            placemark.addTapListener(MapObjectTapListener { _, _ ->
+                selectRequest.value(req)
+                true
+            })
+        }
+    }
 
     LaunchedEffect(Unit) {
         permissionLauncher.launch(
@@ -1182,29 +1227,6 @@ private fun VolunteerMapScreen(
                         }
                     } else {
                         userLocationLayer?.isVisible = false
-                    }
-
-                    val icon = pinBitmap?.let { ImageProvider.fromBitmap(it) }
-                    if (markersCollection == null) {
-                        markersCollection = map.mapObjects.addCollection()
-                    }
-                    // Пересборка при смене списка или новом ответе API (nearbyEpoch), иначе тап по метке может не срабатывать.
-                    val newKey = "${state.nearbyEpoch}|" + state.requests.map { it.id }.sorted().joinToString("|")
-                    if (newKey != markersKey) {
-                        markersKey = newKey
-                        markersCollection?.clear()
-                        state.requests.forEach { req ->
-                            val point = Point(req.location.latitude, req.location.longitude)
-                            val placemark = if (icon != null) {
-                                markersCollection!!.addPlacemark(point, icon, IconStyle().apply { scale = 1.0f })
-                            } else {
-                                markersCollection!!.addPlacemark(point)
-                            }
-                            placemark.addTapListener(MapObjectTapListener { _, _ ->
-                                onSelect(req)
-                                true
-                            })
-                        }
                     }
                 }
             )
