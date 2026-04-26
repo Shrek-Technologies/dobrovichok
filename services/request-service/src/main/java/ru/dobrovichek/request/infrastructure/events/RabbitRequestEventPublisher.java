@@ -7,8 +7,12 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import ru.dobrovichek.events.RequestCreatedEvent;
 import ru.dobrovichek.events.RequestEventTopology;
 import ru.dobrovichek.events.RequestStatusChangedEvent;
+import ru.dobrovichek.events.VolunteerAbandonedRequestEvent;
 import ru.dobrovichek.request.application.port.out.RequestEventPublisher;
 import ru.dobrovichek.request.domain.HelpRequest;
+
+import java.time.Instant;
+import java.util.UUID;
 
 public class RabbitRequestEventPublisher implements RequestEventPublisher {
 
@@ -46,6 +50,15 @@ public class RabbitRequestEventPublisher implements RequestEventPublisher {
                         request.getUpdatedAt()
                 ),
                 request.getId()
+        );
+    }
+
+    @Override
+    public void publishVolunteerAbandoned(UUID requestId, UUID wardId, UUID volunteerId, Instant abandonedAt) {
+        publish(
+                RequestEventTopology.REQUEST_VOLUNTEER_ABANDONED_ROUTING_KEY,
+                new VolunteerAbandonedRequestEvent(requestId, wardId, volunteerId, abandonedAt),
+                requestId
         );
     }
 

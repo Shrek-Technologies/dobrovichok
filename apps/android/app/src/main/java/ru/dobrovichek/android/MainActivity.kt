@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import ru.dobrovichek.android.ui.theme.DobrovichekTheme
 import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.MapKit
 import ru.dobrovichek.android.data.AuthApiFactory
@@ -33,8 +34,8 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            MaterialTheme {
-                Surface {
+            DobrovichekTheme {
+                Surface(color = MaterialTheme.colorScheme.background) {
                     WardApp(
                         sessionStore = sessionStore,
                         authRepository = authRepository,

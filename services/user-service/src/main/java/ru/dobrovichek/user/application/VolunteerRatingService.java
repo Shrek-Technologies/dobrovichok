@@ -60,7 +60,7 @@ public class VolunteerRatingService {
         if (!history.getWardId().equals(currentUser.userId())) {
             throw new ForbiddenException("You can rate only your own completed requests");
         }
-        if (volunteerRatingRepository.existsByRequestId(request.requestId())) {
+        if (volunteerRatingRepository.existsByRequestIdAndVolunteerId(request.requestId(), volunteerId)) {
             throw new ConflictException("Rating for this request already exists");
         }
 
@@ -87,6 +87,23 @@ public class VolunteerRatingService {
         return value == null
                 ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
                 : BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    @Transactional
+    public void applyAbandonmentPenalty(UUID volunteerId, UUID requestId, UUID wardId) {
+        if (volunteerRatingRepository.existsByRequestIdAndVolunteerId(requestId, volunteerId)) {
+            return;
+        }
+        VolunteerRating rating = VolunteerRating.create(
+                requestId,
+                volunteerId,
+                wardId,
+                1,
+                Instant.now(clock)
+        );
+        volunteerRatingRepository.save(rating);
+        refreshVolunteerRating(volunteerId, rating.getCreatedAt());
+        volunteerRequestHistoryRepository.deleteById(requestId);
     }
 
     private void requireWard(CurrentUser currentUser) {

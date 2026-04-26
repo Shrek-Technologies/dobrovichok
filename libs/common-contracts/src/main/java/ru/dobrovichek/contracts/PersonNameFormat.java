@@ -1,14 +1,10 @@
 package ru.dobrovichek.contracts;
 
-/**
- * Форматы отображения ФИО для API и клиентов.
- */
 public final class PersonNameFormat {
 
     private PersonNameFormat() {
     }
 
-    /** Полное ФИО: «Имя Отчество Фамилия» (пустые части пропускаются). */
     public static String fullFormal(String firstName, String patronymic, String lastName) {
         String f = blankToNull(firstName);
         String p = blankToNull(patronymic);
@@ -20,13 +16,11 @@ public final class PersonNameFormat {
         return sb.toString();
     }
 
-    /** Только имя (кратко на карте у волонтёра). */
     public static String firstNameOnly(String firstName) {
         String f = blankToNull(firstName);
         return f != null ? f : "";
     }
 
-    /** Имя и фамилия — как показываем волонтёра подопечному. */
     public static String firstAndLast(String firstName, String lastName) {
         StringBuilder sb = new StringBuilder();
         appendPart(sb, blankToNull(firstName));

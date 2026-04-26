@@ -11,6 +11,8 @@ public interface VolunteerRatingJpaRepository extends JpaRepository<VolunteerRat
 
     boolean existsByRequestId(UUID requestId);
 
+    boolean existsByRequestIdAndVolunteerId(UUID requestId, UUID volunteerId);
+
     @Query("""
             select new ru.dobrovichek.user.infrastructure.persistence.VolunteerRatingSnapshot(
                 count(vr),

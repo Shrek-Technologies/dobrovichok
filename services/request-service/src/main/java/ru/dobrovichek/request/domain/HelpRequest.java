@@ -135,6 +135,19 @@ public class HelpRequest {
         this.updatedAt = now;
     }
 
+    public void abandonByVolunteer(Instant now) {
+        if (status != RequestStatus.ACCEPTED) {
+            throw new ConflictException("Only accepted requests can be released");
+        }
+        if (volunteerId == null) {
+            throw new ConflictException("Request has no assigned volunteer");
+        }
+        this.volunteerId = null;
+        this.status = RequestStatus.CREATED;
+        this.acceptedAt = null;
+        this.updatedAt = now;
+    }
+
     public UUID getId() {
         return id;
     }

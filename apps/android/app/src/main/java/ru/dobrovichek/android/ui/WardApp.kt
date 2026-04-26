@@ -2,27 +2,38 @@
 
 package ru.dobrovichek.android.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +41,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -41,9 +53,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,6 +80,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.tasks.await
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import retrofit2.HttpException
 import ru.dobrovichek.android.data.AuthRepository
 import ru.dobrovichek.android.data.RequestRepository
@@ -86,6 +109,8 @@ import android.Manifest
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material3.FloatingActionButton
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import ru.dobrovichek.android.R
@@ -94,6 +119,43 @@ import android.graphics.Canvas
 import androidx.core.graphics.drawable.toBitmap
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.SpanStyle
+import ru.dobrovichek.android.ui.theme.DobrovichekColors
+import ru.dobrovichek.android.ui.theme.DobrovichekCardShape
+import ru.dobrovichek.android.ui.theme.DobrovichekWardBackground
+import ru.dobrovichek.android.ui.theme.GradientPrimaryButton
+import ru.dobrovichek.android.ui.theme.SoftOrangeButton
+
+private fun HelpCategory.palette(): Pair<Color, Color> = when (this) {
+    HelpCategory.DELIVERY -> DobrovichekColors.OrangeSoft to Color(0xFFFF9E67)
+    HelpCategory.TECH -> DobrovichekColors.MintSoft to DobrovichekColors.MintBorder
+    HelpCategory.COMPANION -> DobrovichekColors.SkySoft to DobrovichekColors.SkyBorder
+    HelpCategory.OTHER -> Color(0xFFF3F4F6) to Color(0xFFADB5BD)
+}
+
+private fun HelpCategory.subtitle(): String = when (this) {
+    HelpCategory.DELIVERY -> "Продукты, лекарства и другое"
+    HelpCategory.TECH -> "Телефон, интернет, техника"
+    HelpCategory.COMPANION -> "Прогулка, визиты, сопровождение"
+    HelpCategory.OTHER -> "Иная помощь"
+}
+
+private fun Urgency.accentBorder(): Color = when (this) {
+    Urgency.ASAP -> DobrovichekColors.OrangeCoral
+    Urgency.LATER -> DobrovichekColors.BluePrimary
+}
+
+private fun Urgency.rowBackground(): Color = when (this) {
+    Urgency.ASAP -> DobrovichekColors.OrangeSoft
+    Urgency.LATER -> Color(0xFFECEFF1)
+}
 
 enum class HelpCategory(val title: String) {
     DELIVERY("Доставка"),
@@ -109,7 +171,8 @@ enum class Urgency(val title: String) {
 
 data class WardUiState(
     val category: HelpCategory = HelpCategory.TECH,
-    val urgency: Urgency = Urgency.ASAP, 
+    val urgency: Urgency = Urgency.ASAP,
+    val preferredTime: String = "",
     val address: String = "Политехническая улица, 29В",
     val apartment: String = "",
     val comment: String = "",
@@ -128,9 +191,17 @@ class WardViewModel(
     private val _state = MutableStateFlow(WardUiState())
     val state: StateFlow<WardUiState> = _state.asStateFlow()
     private var searchJob: Job? = null
+    private var foundWatchJob: Job? = null
 
     fun chooseCategory(category: HelpCategory) = _state.update { it.copy(category = category) }
-    fun chooseUrgency(urgency: Urgency) = _state.update { it.copy(urgency = urgency) }
+    fun chooseUrgency(urgency: Urgency) = _state.update {
+        it.copy(
+            urgency = urgency,
+            preferredTime = if (urgency == Urgency.ASAP) "" else it.preferredTime
+        )
+    }
+
+    fun updatePreferredTime(value: String) = _state.update { it.copy(preferredTime = value) }
     fun updateApartment(value: String) = _state.update { it.copy(apartment = value) }
     fun updateComment(value: String) = _state.update { it.copy(comment = value) }
     fun updateAddressPoint(latitude: Double, longitude: Double) {
@@ -155,6 +226,7 @@ class WardViewModel(
                 repository.createRequest(
                     category = state.value.category.title,
                     urgency = state.value.urgency.title,
+                    preferredTime = state.value.preferredTime.takeIf { state.value.urgency == Urgency.LATER },
                     address = state.value.address,
                     apartment = state.value.apartment,
                     comment = state.value.comment,
@@ -195,6 +267,7 @@ class WardViewModel(
     fun cancelRequest(onCancelled: () -> Unit) {
         val requestId = state.value.createdRequestId ?: return
         searchJob?.cancel()
+        foundWatchJob?.cancel()
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             runCatching { repository.cancelRequest(requestId) }
@@ -206,6 +279,70 @@ class WardViewModel(
                     _state.update { it.copy(isLoading = false, error = error.message ?: "Не удалось отменить заявку") }
                 }
         }
+    }
+
+    fun completeHelp(onSuccess: () -> Unit) {
+        val requestId = state.value.createdRequestId ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null) }
+            runCatching { repository.completeRequest(requestId) }
+                .onSuccess {
+                    _state.update { it.copy(isLoading = false) }
+                    onSuccess()
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(isLoading = false, error = error.message ?: "Не удалось закрыть заявку") }
+                }
+        }
+    }
+
+    fun startFoundWatcher(
+        onCancelled: () -> Unit,
+        onVolunteerReleased: () -> Unit,
+        onCompleted: (volunteerId: String, requestId: String) -> Unit
+    ) {
+        val requestId = state.value.createdRequestId ?: return
+        foundWatchJob?.cancel()
+        foundWatchJob = viewModelScope.launch {
+            while (isActive) {
+                runCatching { repository.getRequest(requestId) }
+                    .onSuccess { req ->
+                        when {
+                            req.status.equals("CANCELLED", ignoreCase = true) -> {
+                                _state.update { WardUiState() }
+                                onCancelled()
+                                return@launch
+                            }
+                            req.status.equals("COMPLETED", ignoreCase = true) -> {
+                                val vid = req.volunteerId?.takeIf { it.isNotBlank() }
+                                    ?: state.value.assignedVolunteerId?.takeIf { it.isNotBlank() }
+                                if (vid != null) {
+                                    onCompleted(vid, requestId)
+                                }
+                                return@launch
+                            }
+                            req.status.equals("CREATED", ignoreCase = true) &&
+                                req.volunteerId.isNullOrBlank() -> {
+                                _state.update { it.copy(assignedVolunteerId = null) }
+                                onVolunteerReleased()
+                                return@launch
+                            }
+                        }
+                    }
+                delay(3000)
+            }
+        }
+    }
+
+    fun stopFoundWatcher() {
+        foundWatchJob?.cancel()
+        foundWatchJob = null
+    }
+
+    fun clearWardRequestFlow() {
+        searchJob?.cancel()
+        foundWatchJob?.cancel()
+        _state.update { WardUiState() }
     }
 }
 
@@ -393,6 +530,7 @@ data class VolunteerUiState(
     val acceptingRequest: Boolean = false,
     val error: String? = null,
     val requests: List<RequestSummaryDto> = emptyList(),
+    val nearbyEpoch: Int = 0,
     val selected: RequestSummaryDto? = null,
     val acceptedRequestId: String? = null,
     val acceptedDetails: RequestResponseDto? = null
@@ -403,6 +541,11 @@ class VolunteerViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(VolunteerUiState())
     val state: StateFlow<VolunteerUiState> = _state.asStateFlow()
+    private var detailsWatchJob: Job? = null
+
+    fun onVolunteerMapShown() {
+        _state.update { it.copy(nearbyEpoch = it.nearbyEpoch + 1) }
+    }
 
     fun refreshNearby(latitude: Double, longitude: Double, showLoading: Boolean = true) {
         viewModelScope.launch {
@@ -412,7 +555,14 @@ class VolunteerViewModel(
                 _state.update { it.copy(error = null) }
             }
             runCatching { repository.findNearby(latitude, longitude, radiusKm = 1.0) }
-                .onSuccess { items -> _state.update { it.copy(isLoading = false, requests = items) } }
+                .onSuccess { items ->
+                    _state.update { s ->
+                        val newIds = items.map { it.id }.sorted().joinToString("|")
+                        val oldIds = s.requests.map { it.id }.sorted().joinToString("|")
+                        val bump = if (newIds != oldIds) 1 else 0
+                        s.copy(isLoading = false, requests = items, nearbyEpoch = s.nearbyEpoch + bump)
+                    }
+                }
                 .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message ?: "Ошибка загрузки") } }
         }
     }
@@ -421,7 +571,7 @@ class VolunteerViewModel(
         _state.update { it.copy(selected = item, error = null) }
     }
 
-    /** Закрывает карточку и открывает экран подтверждения без вызова API (принятие — только после «Подтвердить»). */
+    /** Принятие заявки на сервере — только после экрана «Подтвердить», не здесь. */
     fun startConfirmFlow(onNavigate: (String) -> Unit) {
         val selected = state.value.selected ?: return
         val id = selected.id
@@ -452,6 +602,81 @@ class VolunteerViewModel(
                 .onSuccess { details -> _state.update { it.copy(isLoading = false, acceptedDetails = details) } }
                 .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message ?: "Не удалось загрузить заявку") } }
         }
+    }
+
+    fun abandonAcceptedRequest(requestId: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null) }
+            runCatching { repository.abandonVolunteer(requestId) }
+                .onSuccess {
+                    stopDetailsWatcher()
+                    _state.update {
+                        it.copy(isLoading = false, acceptedRequestId = null, acceptedDetails = null)
+                    }
+                    onSuccess()
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(isLoading = false, error = error.message ?: "Не удалось отказаться от заявки")
+                    }
+                }
+        }
+    }
+
+    fun startDetailsWatcher(
+        requestId: String,
+        myVolunteerId: String,
+        onRequestCancelled: () -> Unit,
+        onReleased: () -> Unit,
+        onCompleted: () -> Unit
+    ) {
+        detailsWatchJob?.cancel()
+        detailsWatchJob = viewModelScope.launch {
+            while (isActive) {
+                runCatching { repository.getRequest(requestId) }
+                    .onSuccess { req ->
+                        when {
+                            req.status.equals("CANCELLED", ignoreCase = true) -> {
+                                _state.update {
+                                    it.copy(acceptedRequestId = null, acceptedDetails = null)
+                                }
+                                onRequestCancelled()
+                                return@launch
+                            }
+                            req.status.equals("COMPLETED", ignoreCase = true) -> {
+                                _state.update {
+                                    it.copy(acceptedRequestId = null, acceptedDetails = null)
+                                }
+                                onCompleted()
+                                return@launch
+                            }
+                            req.status.equals("CREATED", ignoreCase = true) &&
+                                req.volunteerId.isNullOrBlank() -> {
+                                _state.update {
+                                    it.copy(acceptedRequestId = null, acceptedDetails = null)
+                                }
+                                onReleased()
+                                return@launch
+                            }
+                            req.status.equals("ACCEPTED", ignoreCase = true) &&
+                                !req.volunteerId.isNullOrBlank() &&
+                                req.volunteerId != myVolunteerId -> {
+                                _state.update {
+                                    it.copy(acceptedRequestId = null, acceptedDetails = null)
+                                }
+                                onReleased()
+                                return@launch
+                            }
+                        }
+                    }
+                delay(3000)
+            }
+        }
+    }
+
+    fun stopDetailsWatcher() {
+        detailsWatchJob?.cancel()
+        detailsWatchJob = null
     }
 }
 
@@ -520,6 +745,7 @@ fun WardApp(
         val start = if (authState.session?.role == "VOLUNTEER") "volunteer_map" else "home"
         NavHost(navController = navController, startDestination = start) {
             composable("volunteer_map") {
+                LaunchedEffect(Unit) { volunteerVm.onVolunteerMapShown() }
                 VolunteerMapScreen(
                     state = volunteerState,
                     onRefresh = { lat, lon -> volunteerVm.refreshNearby(lat, lon, showLoading = false) },
@@ -536,7 +762,10 @@ fun WardApp(
                 VolunteerAcceptConfirmScreen(
                     accepting = vState.acceptingRequest,
                     error = vState.error,
-                    onBack = { navController.popBackStack() },
+                    onBack = {
+                        volunteerVm.onVolunteerMapShown()
+                        navController.popBackStack()
+                    },
                     onConfirm = {
                         volunteerVm.confirmAccept(requestId) {
                             navController.navigate("volunteer_details/$requestId")
@@ -546,10 +775,49 @@ fun WardApp(
             }
             composable("volunteer_details/{requestId}") { backStackEntry ->
                 val requestId = backStackEntry.arguments?.getString("requestId") ?: return@composable
+                val vContext = LocalContext.current
+                val vSession = authState.session!!
                 LaunchedEffect(requestId) { volunteerVm.loadAcceptedDetails(requestId) }
+                DisposableEffect(requestId, vSession.userId) {
+                    volunteerVm.startDetailsWatcher(
+                        requestId = requestId,
+                        myVolunteerId = vSession.userId,
+                        onRequestCancelled = {
+                            Toast.makeText(vContext, "Заявка отменена.", Toast.LENGTH_SHORT).show()
+                            volunteerVm.onVolunteerMapShown()
+                            navController.popBackStack("volunteer_map", inclusive = false)
+                        },
+                        onReleased = {
+                            Toast.makeText(vContext, "Заявка больше не назначена вам.", Toast.LENGTH_SHORT).show()
+                            volunteerVm.onVolunteerMapShown()
+                            navController.popBackStack("volunteer_map", inclusive = false)
+                        },
+                        onCompleted = {
+                            navController.navigate("volunteer_help_done") {
+                                popUpTo("volunteer_map") { inclusive = false }
+                            }
+                        }
+                    )
+                    onDispose { volunteerVm.stopDetailsWatcher() }
+                }
                 VolunteerRequestDetailsScreen(
                     state = volunteerState,
-                    onBackToMap = { navController.popBackStack("volunteer_map", inclusive = false) }
+                    onAbandonHelp = {
+                        volunteerVm.abandonAcceptedRequest(requestId) {
+                            Toast.makeText(vContext, "Вы отказались от заявки.", Toast.LENGTH_SHORT).show()
+                            volunteerVm.onVolunteerMapShown()
+                            navController.popBackStack("volunteer_map", inclusive = false)
+                        }
+                    }
+                )
+            }
+            composable("volunteer_help_done") {
+                VolunteerHelpDoneScreen(
+                    onFindMore = {
+                        navController.navigate("volunteer_map") {
+                            popUpTo("volunteer_map") { inclusive = true }
+                        }
+                    }
                 )
             }
             composable("home") {
@@ -564,6 +832,7 @@ fun WardApp(
                     state = wardState,
                     onCategory = wardVm::chooseCategory,
                     onUrgency = wardVm::chooseUrgency,
+                    onPreferredTimeChange = wardVm::updatePreferredTime,
                     onNext = { navController.navigate("address") }
                 )
             }
@@ -586,16 +855,44 @@ fun WardApp(
                 )
             }
             composable("searching") {
+                val wContext = LocalContext.current
                 SearchingScreen(
                     state = wardState,
                     onStartSearch = { wardVm.startSearching { navController.navigate("found") } },
-                    onCancel = { wardVm.cancelRequest { navController.navigate("home") } }
+                    onCancel = {
+                        wardVm.cancelRequest {
+                            Toast.makeText(wContext, "Заявка отменена.", Toast.LENGTH_SHORT).show()
+                            navController.navigate("home") {
+                                popUpTo("home") { inclusive = true }
+                            }
+                        }
+                    }
                 )
             }
             composable("found") {
                 val foundVm: WardFoundViewModel = viewModel(factory = factory)
+                val fContext = LocalContext.current
                 LaunchedEffect(wardState.assignedVolunteerId) {
                     foundVm.loadVolunteerName(wardState.assignedVolunteerId)
+                }
+                DisposableEffect(wardState.createdRequestId) {
+                    wardVm.startFoundWatcher(
+                        onCancelled = {
+                            Toast.makeText(fContext, "Заявка отменена.", Toast.LENGTH_SHORT).show()
+                            navController.navigate("home") {
+                                popUpTo("home") { inclusive = true }
+                            }
+                        },
+                        onVolunteerReleased = {
+                            navController.popBackStack()
+                        },
+                        onCompleted = { volunteerId, requestId ->
+                            navController.navigate("rate_volunteer/$volunteerId/$requestId") {
+                                popUpTo("home") { inclusive = false }
+                            }
+                        }
+                    )
+                    onDispose { wardVm.stopFoundWatcher() }
                 }
                 val foundState by foundVm.state.collectAsStateWithLifecycle()
                 VolunteerFoundScreen(
@@ -604,7 +901,76 @@ fun WardApp(
                     volunteerPhone = foundState.volunteerPhone,
                     loadingContact = foundState.isLoading,
                     contactError = foundState.error,
-                    onCancel = { wardVm.cancelRequest { navController.navigate("home") } }
+                    onCompleteHelp = {
+                        wardVm.completeHelp {
+                            val s = wardVm.state.value
+                            val vid = s.assignedVolunteerId ?: return@completeHelp
+                            val rid = s.createdRequestId ?: return@completeHelp
+                            navController.navigate("rate_volunteer/$vid/$rid") {
+                                popUpTo("home") { inclusive = false }
+                            }
+                        }
+                    },
+                    onCancel = {
+                        wardVm.cancelRequest {
+                            Toast.makeText(fContext, "Заявка отменена.", Toast.LENGTH_SHORT).show()
+                            navController.navigate("home") {
+                                popUpTo("home") { inclusive = true }
+                            }
+                        }
+                    }
+                )
+            }
+            composable("rate_volunteer/{volunteerId}/{requestId}") { backStackEntry ->
+                val volunteerId = backStackEntry.arguments?.getString("volunteerId") ?: return@composable
+                val requestId = backStackEntry.arguments?.getString("requestId") ?: return@composable
+                val rContext = LocalContext.current
+                val scope = rememberCoroutineScope()
+                RateVolunteerScreen(
+                    userRepository = userRepository,
+                    volunteerId = volunteerId,
+                    onHome = {
+                        wardVm.clearWardRequestFlow()
+                        navController.navigate("home") {
+                            popUpTo("home") { inclusive = true }
+                        }
+                    },
+                    onSubmitRating = { score ->
+                        scope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    userRepository.submitVolunteerRating(volunteerId, requestId, score)
+                                }
+                            }.onSuccess {
+                                Toast.makeText(rContext, "Спасибо за оценку!", Toast.LENGTH_SHORT).show()
+                                wardVm.clearWardRequestFlow()
+                                navController.navigate("home") {
+                                    popUpTo("home") { inclusive = true }
+                                }
+                            }.onFailure { e ->
+                                val text = when (e) {
+                                    is HttpException -> {
+                                        val body = e.response()?.errorBody()?.use { it.string() }.orEmpty()
+                                        when (e.code()) {
+                                            409 -> when {
+                                                body.contains("already exists", ignoreCase = true) ->
+                                                    "Вы уже оценили эту заявку"
+                                                body.contains("not found", ignoreCase = true) ->
+                                                    "Сервис не успел обновить заявку. Проверьте, что RabbitMQ запущен и user-service подписан на события."
+                                                else ->
+                                                    "Заявка ещё не помечена завершённой в профиле. Попробуйте отправить оценку ещё раз."
+                                            }
+                                            403 -> "Оценку могут оставить только подопечные по своей заявке."
+                                            400 -> "Некорректные данные оценки."
+                                            else -> e.message?.takeIf { it.isNotBlank() } ?: "Ошибка сервера (${e.code()})"
+                                        }
+                                    }
+                                    else -> e.message?.takeIf { it.isNotBlank() } ?: "Не удалось отправить оценку"
+                                }
+                                Toast.makeText(rContext, text, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -625,15 +991,28 @@ private fun VolunteerMapScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var userLocationLayer: UserLocationLayer? by remember { mutableStateOf(null) }
     var currentLocation: Point? by remember { mutableStateOf(null) }
-    var mapInitialized by remember { mutableStateOf(false) }
+    var initialCameraFixApplied by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* no-op */ }
+    ) { }
 
     DisposableEffect(mapView) {
         mapView.onStart()
         onDispose { mapView.onStop() }
     }
+
+    val fallback = remember { Point(60.0092, 30.3578) }
+    val pinBitmap: Bitmap? = remember {
+        runCatching {
+            val drawable = ContextCompat.getDrawable(context, R.drawable.ic_pin) ?: return@runCatching null
+            drawable.toBitmap(width = 96, height = 96, config = Bitmap.Config.ARGB_8888)
+        }.getOrNull()
+    }
+
+    var markersCollection: MapObjectCollection? by remember { mutableStateOf(null) }
+    var markersKey: String by remember { mutableStateOf("") }
+
+    val fusedClient = remember { com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context) }
 
     LaunchedEffect(Unit) {
         permissionLauncher.launch(
@@ -642,39 +1021,47 @@ private fun VolunteerMapScreen(
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-    }
-
-    val fallback = remember { Point(60.0092, 30.3578) }
-    val pinBitmap: Bitmap? = remember {
-        runCatching {
-            val drawable = ContextCompat.getDrawable(context, R.drawable.ic_pin) ?: return@runCatching null
-            // Ensure we have a reasonable size for map markers
-            drawable.toBitmap(width = 96, height = 96, config = Bitmap.Config.ARGB_8888)
-        }.getOrNull()
-    }
-    // Stable marker collection to prevent blinking
-    var markersCollection: MapObjectCollection? by remember { mutableStateOf(null) }
-    var markersKey: String by remember { mutableStateOf("") }
-
-    // Load last known location once we have permission (used for centering and nearby search)
-    LaunchedEffect(Unit) {
-        val fused = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
-        val hasPermission =
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (hasPermission) {
-            @Suppress("MissingPermission")
-            fused.lastLocation.addOnSuccessListener { loc ->
-                if (loc != null) currentLocation = Point(loc.latitude, loc.longitude)
-            }
+        delay(1000)
+        fun hasLocationPermission(): Boolean {
+            return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        }
+        if (!hasLocationPermission()) {
+            mapView.mapWindow.map.move(CameraPosition(fallback, 14.5f, 0f, 0f))
+            initialCameraFixApplied = true
+            return@LaunchedEffect
+        }
+        @Suppress("MissingPermission")
+        val loc = try {
+            val last = fusedClient.lastLocation.await()
+            last ?: fusedClient.getCurrentLocation(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                CancellationTokenSource().token
+            ).await()
+        } catch (_: Exception) {
+            null
+        }
+        if (loc != null) {
+            val p = Point(loc.latitude, loc.longitude)
+            currentLocation = p
+            mapView.mapWindow.map.move(CameraPosition(p, 14.5f, 0f, 0f))
+            initialCameraFixApplied = true
+        } else {
+            mapView.mapWindow.map.move(CameraPosition(fallback, 14.5f, 0f, 0f))
         }
     }
 
-    // Auto-refresh nearby requests every 5 seconds WITHOUT moving the camera
+    LaunchedEffect(currentLocation) {
+        val p = currentLocation ?: return@LaunchedEffect
+        if (!initialCameraFixApplied) {
+            mapView.mapWindow.map.move(CameraPosition(p, 14.5f, 0f, 0f))
+            initialCameraFixApplied = true
+        }
+    }
+
     LaunchedEffect(currentLocation) {
         while (true) {
             val p = currentLocation ?: fallback
-            // Silent refresh (no loading flicker)
             onRefresh(p.latitude, p.longitude)
             delay(5000)
         }
@@ -683,7 +1070,12 @@ private fun VolunteerMapScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Поиск заданий") },
+                title = { Text("Поиск заданий", color = DobrovichekColors.NavyText) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = DobrovichekColors.BackgroundCream.copy(alpha = 0.95f),
+                    titleContentColor = DobrovichekColors.NavyText,
+                    actionIconContentColor = DobrovichekColors.NavyText
+                ),
                 actions = {
                     IconButton(onClick = onLogout) { Icon(Icons.Default.Close, contentDescription = "Выйти") }
                 }
@@ -697,11 +1089,6 @@ private fun VolunteerMapScreen(
                 factory = { mapView },
                 update = {
                     val map = mapView.mapWindow.map
-                    if (!mapInitialized) {
-                        val target = currentLocation ?: fallback
-                        map.move(CameraPosition(target, 14.5f, 0f, 0f))
-                        mapInitialized = true
-                    }
 
                     val hasLocationPermission =
                         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -713,9 +1100,8 @@ private fun VolunteerMapScreen(
                             userLocationLayer = mapKit.createUserLocationLayer(mapView.mapWindow)
                         }
                         userLocationLayer?.isVisible = true
-                        val fused = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
                         @Suppress("MissingPermission")
-                        fused.lastLocation.addOnSuccessListener { loc ->
+                        fusedClient.lastLocation.addOnSuccessListener { loc ->
                             if (loc != null) currentLocation = Point(loc.latitude, loc.longitude)
                         }
                     } else {
@@ -726,8 +1112,8 @@ private fun VolunteerMapScreen(
                     if (markersCollection == null) {
                         markersCollection = map.mapObjects.addCollection()
                     }
-                    // Update markers only if the set changed (avoids frequent clear/re-add)
-                    val newKey = state.requests.map { it.id }.sorted().joinToString("|")
+                    // Пересборка при смене списка или новом ответе API (nearbyEpoch), иначе тап по метке может не срабатывать.
+                    val newKey = "${state.nearbyEpoch}|" + state.requests.map { it.id }.sorted().joinToString("|")
                     if (newKey != markersKey) {
                         markersKey = newKey
                         markersCollection?.clear()
@@ -747,14 +1133,24 @@ private fun VolunteerMapScreen(
                 }
             )
 
-            Button(
+            FloatingActionButton(
                 onClick = {
-                    val p = currentLocation ?: fallback
-                    onRefresh(p.latitude, p.longitude)
+                    val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    if (fine || coarse) {
+                        @Suppress("MissingPermission")
+                        fusedClient.lastLocation.addOnSuccessListener { loc ->
+                            if (loc != null) {
+                                val pt = Point(loc.latitude, loc.longitude)
+                                currentLocation = pt
+                                mapView.mapWindow.map.move(CameraPosition(pt, 15f, 0f, 0f))
+                            }
+                        }
+                    }
                 },
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
             ) {
-                Text("Обновить")
+                Icon(Icons.Default.MyLocation, contentDescription = "Моё местоположение")
             }
 
             state.error?.let {
@@ -808,80 +1204,206 @@ private fun VolunteerAcceptConfirmScreen(
     onBack: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-        Text("Подтверждение", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Подтвердите, что вы готовы помочь. Только после этого подопечный увидит, что волонтёр нашёлся, и получит ваши контакты.",
-            color = Color.Gray
-        )
-        error?.let {
-            Spacer(Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
-        }
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = onConfirm,
-            enabled = !accepting,
-            modifier = Modifier.fillMaxWidth()
+    DobrovichekWardBackground {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.Center
         ) {
-            if (accepting) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text("Отправка…")
-                }
-            } else {
-                Text("Да, я готов")
+            Text(
+                "Подтверждение",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = DobrovichekColors.NavyText
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Подтвердите, что вы готовы помочь. Только после этого подопечный увидит, что волонтёр нашёлся, и получит ваши контакты.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = DobrovichekColors.GreySecondary
+            )
+            error?.let {
+                Spacer(Modifier.height(12.dp))
+                Text(it, color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(Modifier.height(28.dp))
+            GradientPrimaryButton(
+                text = "Да, я готов",
+                onClick = onConfirm,
+                enabled = !accepting,
+                loading = accepting
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onBack,
+                enabled = !accepting,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = DobrovichekCardShape,
+                border = BorderStroke(1.dp, DobrovichekColors.CardBorderSubtle),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = DobrovichekColors.NavyText)
+            ) {
+                Text("Назад")
             }
         }
-        Spacer(Modifier.height(12.dp))
-        Button(onClick = onBack, enabled = !accepting, modifier = Modifier.fillMaxWidth()) { Text("Назад") }
     }
 }
 
 @Composable
-private fun VolunteerRequestDetailsScreen(state: VolunteerUiState, onBackToMap: () -> Unit) {
+private fun VolunteerRequestDetailsScreen(
+    state: VolunteerUiState,
+    onAbandonHelp: () -> Unit
+) {
+    val context = LocalContext.current
     val details = state.acceptedDetails
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Контакты и детали", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(12.dp))
-        if (state.isLoading && details == null) {
-            CircularProgressIndicator()
-            return
-        }
-        if (details == null) {
-            Text("Не удалось загрузить данные заявки", color = MaterialTheme.colorScheme.error)
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = onBackToMap) { Text("Назад") }
-            return
-        }
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                val wardFull = details.wardFullName?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: PersonNameFormat.fullFormal(
-                        details.wardFirstName.orEmpty(),
-                        details.wardPatronymic,
-                        details.wardLastName.orEmpty()
-                    ).ifBlank { null }
-                wardFull?.let {
-                    Text("Подопечный", color = Color.Gray)
-                    Text(it, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(12.dp))
+    DobrovichekWardBackground {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                "Вы оказываете помощь",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = DobrovichekColors.NavyText,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "Заявка и способ связи",
+                style = MaterialTheme.typography.bodyMedium,
+                color = DobrovichekColors.GreySecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(16.dp))
+            when {
+                state.isLoading && details == null -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = DobrovichekCardShape,
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        Column(
+                            Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Загружаем заявку…", color = DobrovichekColors.GreySecondary)
+                            Spacer(Modifier.height(12.dp))
+                            CircularProgressIndicator(color = DobrovichekColors.BluePrimary)
+                        }
+                    }
                 }
-                Text(details.description ?: "", style = MaterialTheme.typography.bodyLarge)
-                Spacer(Modifier.height(12.dp))
-                Text("Телефон подопечного", fontWeight = FontWeight.Medium)
-                Text(details.contactPhone ?: "Недоступно", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                Text("Статус: ${details.status}", color = Color.Gray)
+                details == null -> {
+                    Text("Не удалось загрузить данные заявки", color = MaterialTheme.colorScheme.error)
+                }
+                else -> {
+                    val wardFull = details.wardFullName?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: PersonNameFormat.fullFormal(
+                            details.wardFirstName.orEmpty(),
+                            details.wardPatronymic,
+                            details.wardLastName.orEmpty()
+                        ).ifBlank { null }
+                    val phone = details.contactPhone?.trim()?.takeIf { it.isNotEmpty() }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = DobrovichekCardShape,
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        Column(Modifier.padding(18.dp)) {
+                            Text("Подопечный", style = MaterialTheme.typography.bodyMedium, color = DobrovichekColors.GreySecondary)
+                            Text(
+                                text = wardFull ?: "Имя не указано",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = DobrovichekColors.NavyText
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text("Телефон", style = MaterialTheme.typography.bodyMedium, color = DobrovichekColors.GreySecondary)
+                            Text(
+                                text = phone ?: "Недоступно",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = DobrovichekColors.NavyText
+                            )
+                            if (phone != null) {
+                                Spacer(Modifier.height(14.dp))
+                                Button(
+                                    onClick = {
+                                        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                                            data = Uri.parse("tel:$phone")
+                                        }
+                                        context.startActivity(dialIntent)
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    shape = DobrovichekCardShape,
+                                    colors = ButtonDefaults.buttonColors(containerColor = DobrovichekColors.MintBorder)
+                                ) {
+                                    Text("Позвонить", color = Color.White, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                            Spacer(Modifier.height(18.dp))
+                            HorizontalDivider(color = DobrovichekColors.CardBorderSubtle)
+                            Spacer(Modifier.height(14.dp))
+                            Text("О заявке", style = MaterialTheme.typography.bodyMedium, color = DobrovichekColors.GreySecondary)
+                            Text(
+                                details.description ?: "",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = DobrovichekColors.NavyText
+                            )
+                        }
+                    }
+                    state.error?.let {
+                        Spacer(Modifier.height(12.dp))
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    SoftOrangeButton(
+                        text = "Не смогу помочь",
+                        onClick = onAbandonHelp,
+                        enabled = !state.isLoading
+                    )
+                }
             }
+            Spacer(Modifier.height(16.dp))
         }
-        Spacer(Modifier.weight(1f))
-        Button(onClick = onBackToMap, modifier = Modifier.fillMaxWidth()) { Text("Назад к карте") }
+    }
+}
+
+@Composable
+private fun VolunteerHelpDoneScreen(onFindMore: () -> Unit) {
+    DobrovichekWardBackground {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 28.dp, vertical = 32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "Помощь оказана!",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = DobrovichekColors.NavyText,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Спасибо, что помогаете людям рядом",
+                style = MaterialTheme.typography.bodyLarge,
+                color = DobrovichekColors.GreySecondary,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(36.dp))
+            GradientPrimaryButton(text = "Найти другие заявки", onClick = onFindMore)
+        }
     }
 }
 
@@ -900,49 +1422,84 @@ private fun AuthScreen(
 ) {
     when {
         state.isRegisterMode && state.registerStep == AuthRegisterStep.CHOOSE_ROLE -> {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                Text("Выберите роль", style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(24.dp))
-                Button(
-                    onClick = { onRegisterRoleChosen("WARD") },
-                    modifier = Modifier.fillMaxWidth()
+            DobrovichekWardBackground {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Я хочу получать оперативную помощь", style = MaterialTheme.typography.bodyLarge)
-                }
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = { onRegisterRoleChosen("VOLUNTEER") },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Я волонтёр и хочу помогать", style = MaterialTheme.typography.bodyLarge)
-                }
-                Spacer(Modifier.height(32.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = { onToggleMode(false) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("У меня уже есть аккаунт")
+                    Image(
+                        painter = painterResource(id = R.drawable.logo),
+                        contentDescription = null,
+                        modifier = Modifier.size(100.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Добровичок",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = DobrovichekColors.NavyText
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("Выберите роль", style = MaterialTheme.typography.titleLarge, color = DobrovichekColors.GreySecondary)
+                    Spacer(Modifier.height(24.dp))
+                    GradientPrimaryButton(
+                        text = "Я хочу получать оперативную помощь",
+                        onClick = { onRegisterRoleChosen("WARD") }
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = { onRegisterRoleChosen("VOLUNTEER") },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = DobrovichekCardShape,
+                        border = BorderStroke(1.dp, DobrovichekColors.BluePrimary),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = DobrovichekColors.BluePrimary)
+                    ) {
+                        Text("Я волонтёр и хочу помогать", style = MaterialTheme.typography.bodyLarge)
+                    }
+                    Spacer(Modifier.height(32.dp))
+                    HorizontalDivider(color = DobrovichekColors.CardBorderSubtle)
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = { onToggleMode(false) },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = DobrovichekCardShape,
+                        border = BorderStroke(1.dp, DobrovichekColors.CardBorderSubtle),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = DobrovichekColors.NavyText)
+                    ) {
+                        Text("У меня уже есть аккаунт")
+                    }
                 }
             }
         }
         else -> {
             val showRegisterFields = state.isRegisterMode && state.registerStep == AuthRegisterStep.ENTER_DETAILS
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            DobrovichekWardBackground {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                Image(
+                    painter = painterResource(id = R.drawable.logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(88.dp),
+                    contentScale = ContentScale.Fit
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Добровичок",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = DobrovichekColors.NavyText
+                )
                 Text(
                     when {
                         showRegisterFields -> "Регистрация"
@@ -1032,6 +1589,7 @@ private fun AuthScreen(
                 ) {
                     Text(if (state.isRegisterMode) "У меня уже есть аккаунт" else "Создать новый аккаунт")
                 }
+                }
             }
         }
     }
@@ -1039,26 +1597,55 @@ private fun AuthScreen(
 
 @Composable
 private fun HomeScreen(session: UserSession?, onCreate: () -> Unit, onLogout: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(
-            session?.let { PersonNameFormat.volunteerForWard(it.firstName, it.lastName).ifBlank { it.fullName } }
-                ?: "Помощь рядом",
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.Gray
-        )
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
-            Text("Создать заявку")
-        }
-        Spacer(Modifier.height(12.dp))
-        Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
-            Text("Выйти")
+    DobrovichekWardBackground {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 28.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.logo),
+                contentDescription = null,
+                modifier = Modifier
+                    .height(120.dp)
+                    .fillMaxWidth(),
+                contentScale = ContentScale.Fit
+            )
+            Spacer(Modifier.height(20.dp))
+            Text(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = DobrovichekColors.OrangeCoral, fontWeight = FontWeight.Bold, fontSize = 32.sp)) {
+                        append("Добро")
+                    }
+                    withStyle(SpanStyle(color = DobrovichekColors.BluePrimary, fontWeight = FontWeight.Bold, fontSize = 32.sp)) {
+                        append("вичок")
+                    }
+                },
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                session?.let { PersonNameFormat.volunteerForWard(it.firstName, it.lastName).ifBlank { it.fullName } }
+                    ?: "Помощь рядом",
+                style = MaterialTheme.typography.titleMedium,
+                color = DobrovichekColors.GreySecondary,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(36.dp))
+            GradientPrimaryButton(text = "Создать заявку", onClick = onCreate)
+            Spacer(Modifier.height(14.dp))
+            OutlinedButton(
+                onClick = onLogout,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = DobrovichekCardShape,
+                border = BorderStroke(1.dp, DobrovichekColors.CardBorderSubtle),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = DobrovichekColors.NavyText)
+            ) {
+                Text("Выйти")
+            }
         }
     }
 }
@@ -1068,32 +1655,101 @@ private fun StepOneScreen(
     state: WardUiState,
     onCategory: (HelpCategory) -> Unit,
     onUrgency: (Urgency) -> Unit,
+    onPreferredTimeChange: (String) -> Unit,
     onNext: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Что Вам нужно?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(16.dp))
-        HelpCategory.entries.forEach { category ->
-            SelectCard(
-                title = category.title,
-                selected = state.category == category,
-                tint = if (category == HelpCategory.TECH) Color(0xFFDDF8DA) else Color(0xFFF6F6F6),
-                onClick = { onCategory(category) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    val timePickerState = rememberTimePickerState(is24Hour = true)
+    DobrovichekWardBackground {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp)
+        ) {
+            Text(
+                "Что Вам нужно?",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = DobrovichekColors.NavyText
             )
-        }
-        Spacer(Modifier.height(16.dp))
-        Text("Когда нужно помочь?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        Urgency.entries.forEach { urgency ->
-            SelectCard(
-                title = urgency.title,
-                selected = state.urgency == urgency,
-                tint = Color(0xFFFFF2E5),
-                onClick = { onUrgency(urgency) }
+            Text(
+                "Выберите категорию помощи",
+                style = MaterialTheme.typography.bodyMedium,
+                color = DobrovichekColors.GreySecondary
             )
+            Spacer(Modifier.height(14.dp))
+            HelpCategory.entries.forEach { category ->
+                val (bg, accent) = category.palette()
+                SelectCard(
+                    title = category.title,
+                    subtitle = category.subtitle(),
+                    selected = state.category == category,
+                    backgroundColor = bg,
+                    accentBorderColor = accent,
+                    onClick = { onCategory(category) }
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "Когда нужно помочь?",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = DobrovichekColors.NavyText
+            )
+            Spacer(Modifier.height(10.dp))
+            Urgency.entries.forEach { urgency ->
+                SelectCard(
+                    title = urgency.title,
+                    subtitle = null,
+                    selected = state.urgency == urgency,
+                    backgroundColor = urgency.rowBackground(),
+                    accentBorderColor = urgency.accentBorder(),
+                    onClick = { onUrgency(urgency) }
+                )
+            }
+            if (state.urgency == Urgency.LATER) {
+                Spacer(Modifier.height(14.dp))
+                Text("Удобное время", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { showTimePicker = true },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = DobrovichekCardShape,
+                    border = BorderStroke(1.dp, DobrovichekColors.BluePrimary.copy(alpha = 0.5f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = DobrovichekColors.BluePrimary)
+                ) {
+                    Text(
+                        if (state.preferredTime.isNotBlank()) "Время: ${state.preferredTime}"
+                        else "Выбрать время"
+                    )
+                }
+            }
+            if (showTimePicker) {
+                AlertDialog(
+                    onDismissRequest = { showTimePicker = false },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                onPreferredTimeChange(
+                                    "%02d:%02d".format(timePickerState.hour, timePickerState.minute)
+                                )
+                                showTimePicker = false
+                            }
+                        ) { Text("Готово") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showTimePicker = false }) { Text("Отмена") }
+                    },
+                    title = { Text("Удобное время") },
+                    text = { TimePicker(state = timePickerState) }
+                )
+            }
+            Spacer(Modifier.height(28.dp))
+            val canContinue = state.urgency != Urgency.LATER || state.preferredTime.isNotBlank()
+            GradientPrimaryButton(text = "Далее", onClick = onNext, enabled = canContinue)
+            Spacer(Modifier.height(16.dp))
         }
-        Spacer(Modifier.weight(1f))
-        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) { Text("Далее") }
     }
 }
 
@@ -1153,51 +1809,66 @@ private fun AddressScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Проверьте Ваш адрес", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Передвиньте карту: маркер в центре должен стоять на вашем доме",
-            color = Color.Gray
-        )
-        Spacer(Modifier.height(12.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(420.dp)
+    DobrovichekWardBackground {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { mapView },
-                update = {
-                    if (!mapInitialized) {
-                        it.mapWindow.map.move(CameraPosition(Point(state.latitude, state.longitude), 16f, 0f, 0f))
-                        mapInitialized = true
+            Text(
+                "Проверьте Ваш адрес",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = DobrovichekColors.NavyText
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Передвинте карту так, чтобы маркер указывал на Ваш адрес",
+                style = MaterialTheme.typography.bodyMedium,
+                color = DobrovichekColors.GreySecondary
+            )
+            Spacer(Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 320.dp)
+                    .clip(DobrovichekCardShape)
+                    .border(1.dp, DobrovichekColors.CardBorderSubtle, DobrovichekCardShape)
+            ) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { mapView },
+                    update = {
+                        if (!mapInitialized) {
+                            it.mapWindow.map.move(CameraPosition(Point(state.latitude, state.longitude), 16f, 0f, 0f))
+                            mapInitialized = true
+                        }
                     }
+                )
+                Image(
+                    painter = painterResource(id = R.drawable.ic_pin),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(66.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(state.address, style = MaterialTheme.typography.bodyLarge, color = DobrovichekColors.NavyText)
+            Spacer(Modifier.height(16.dp))
+            GradientPrimaryButton(
+                text = "Далее",
+                onClick = {
+                    val center = mapView.mapWindow.map.cameraPosition.target
+                    onAddressPointChange(center.latitude, center.longitude)
+                    resolveAddress(context, center.latitude, center.longitude)?.let(onAddressTextChange)
+                    onNext()
                 }
             )
-            Text(
-                "",
-                modifier = Modifier.align(Alignment.Center)
-            )
-            androidx.compose.foundation.Image(
-                painter = androidx.compose.ui.res.painterResource(id = ru.dobrovichek.android.R.drawable.ic_pin),
-                contentDescription = null,
-                modifier = Modifier.align(Alignment.Center)
-            )
+            Spacer(Modifier.height(12.dp))
         }
-        Spacer(Modifier.height(10.dp))
-        Text(state.address, style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.weight(1f))
-        Button(
-            onClick = {
-                val center = mapView.mapWindow.map.cameraPosition.target
-                onAddressPointChange(center.latitude, center.longitude)
-                resolveAddress(context, center.latitude, center.longitude)?.let(onAddressTextChange)
-                onNext()
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Далее") }
     }
 }
 
@@ -1206,7 +1877,6 @@ private fun resolveAddress(context: android.content.Context, latitude: Double, l
         val geocoder = android.location.Geocoder(context, java.util.Locale("ru", "RU"))
         val results = geocoder.getFromLocation(latitude, longitude, 1) ?: return null
         val a = results.firstOrNull() ?: return null
-        // Prefer a short, readable line for seniors
         listOfNotNull(a.thoroughfare, a.subThoroughfare)
             .joinToString(" ")
             .ifBlank { a.getAddressLine(0) }
@@ -1221,44 +1891,84 @@ private fun ConfirmScreen(
     onCommentChange: (String) -> Unit,
     onCreate: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Все верно?", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Проверьте заявку", style = MaterialTheme.typography.titleMedium, color = Color.Gray)
-        Spacer(Modifier.height(16.dp))
-        SelectCard(title = state.category.title, selected = true, tint = Color(0xFFDDF8DA), onClick = {})
-        SelectCard(title = state.urgency.title, selected = true, tint = Color(0xFFFFF2E5), onClick = {})
-        Spacer(Modifier.height(12.dp))
-        Text("Адрес", color = Color.Gray)
-        Text(state.address, style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(14.dp))
-        OutlinedTextField(
-            value = state.apartment,
-            onValueChange = onApartmentChange,
-            label = { Text("Квартира / подъезд *") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = state.comment,
-            onValueChange = onCommentChange,
-            label = { Text("Примечание для волонтёра") },
-            modifier = Modifier.fillMaxWidth().height(160.dp)
-        )
-        state.error?.let {
-            Spacer(Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
-        }
-        Spacer(Modifier.weight(1f))
-        Button(
-            enabled = !state.isLoading && state.apartment.isNotBlank(),
-            onClick = onCreate,
-            modifier = Modifier.fillMaxWidth()
+    val (catBg, catBorder) = state.category.palette()
+    val urgSub = if (state.urgency == Urgency.LATER && state.preferredTime.isNotBlank()) {
+        "Время: ${state.preferredTime}"
+    } else null
+    DobrovichekWardBackground {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
-            if (state.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.height(18.dp))
-            } else {
-                Text("Создать заявку")
+            Text(
+                "Всё верно?",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = DobrovichekColors.NavyText
+            )
+            Text(
+                "Проверьте заявку",
+                style = MaterialTheme.typography.titleMedium,
+                color = DobrovichekColors.GreySecondary
+            )
+            Spacer(Modifier.height(16.dp))
+            SelectCard(
+                title = state.category.title,
+                subtitle = state.category.subtitle(),
+                selected = true,
+                backgroundColor = catBg,
+                accentBorderColor = catBorder,
+                onClick = {}
+            )
+            SelectCard(
+                title = state.urgency.title,
+                subtitle = urgSub,
+                selected = true,
+                backgroundColor = state.urgency.rowBackground(),
+                accentBorderColor = state.urgency.accentBorder(),
+                onClick = {}
+            )
+            Spacer(Modifier.height(12.dp))
+            Text("Адрес", color = DobrovichekColors.GreySecondary, style = MaterialTheme.typography.bodyMedium)
+            Text(state.address, style = MaterialTheme.typography.titleLarge, color = DobrovichekColors.NavyText)
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = state.apartment,
+                onValueChange = onApartmentChange,
+                label = { Text("Квартира *") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = DobrovichekCardShape,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = DobrovichekColors.BluePrimary,
+                    unfocusedBorderColor = DobrovichekColors.CardBorderSubtle
+                )
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = state.comment,
+                onValueChange = onCommentChange,
+                label = { Text("Комментарий для волонтёра") },
+                modifier = Modifier.fillMaxWidth().height(160.dp),
+                shape = DobrovichekCardShape,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = DobrovichekColors.BluePrimary,
+                    unfocusedBorderColor = DobrovichekColors.CardBorderSubtle
+                )
+            )
+            state.error?.let {
+                Spacer(Modifier.height(12.dp))
+                Text(it, color = MaterialTheme.colorScheme.error)
             }
+            Spacer(Modifier.height(20.dp))
+            GradientPrimaryButton(
+                text = "Создать заявку",
+                onClick = onCreate,
+                enabled = !state.isLoading && state.apartment.isNotBlank(),
+                loading = state.isLoading
+            )
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -1273,22 +1983,44 @@ private fun SearchingScreen(state: WardUiState, onStartSearch: () -> Unit, onCan
         }
     }
     androidx.compose.runtime.LaunchedEffect(Unit) { onStartSearch() }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text("Поиск волонтера...", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text("Пожалуйста, подождите пока мы найдем того, кто сможет Вам помочь")
-        Spacer(Modifier.height(12.dp))
-        val mm = (seconds / 60).toString().padStart(2, '0')
-        val ss = (seconds % 60).toString().padStart(2, '0')
-        Text("$mm:$ss", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(16.dp))
-        CircularProgressIndicator()
-        Spacer(Modifier.height(48.dp))
-        Button(enabled = !state.isLoading, onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
-            Text("Отменить заявку")
+    DobrovichekWardBackground {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 28.dp, vertical = 32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "Поиск волонтёра…",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = DobrovichekColors.NavyText,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Пожалуйста, подождите — мы ищем того, кто сможет вам помочь",
+                style = MaterialTheme.typography.bodyLarge,
+                color = DobrovichekColors.GreySecondary,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(16.dp))
+            val mm = (seconds / 60).toString().padStart(2, '0')
+            val ss = (seconds % 60).toString().padStart(2, '0')
+            Text(
+                "$mm:$ss",
+                style = MaterialTheme.typography.headlineSmall,
+                color = DobrovichekColors.GreySecondary.copy(alpha = 0.85f)
+            )
+            Spacer(Modifier.height(20.dp))
+            CircularProgressIndicator(color = DobrovichekColors.BluePrimary)
+            Spacer(Modifier.height(40.dp))
+            SoftOrangeButton(
+                text = "Отменить заявку",
+                onClick = onCancel,
+                enabled = !state.isLoading
+            )
         }
     }
 }
@@ -1300,60 +2032,181 @@ private fun VolunteerFoundScreen(
     volunteerPhone: String?,
     loadingContact: Boolean,
     contactError: String?,
+    onCompleteHelp: () -> Unit,
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
     val nameOk = !volunteerName.isNullOrBlank()
     val phoneOk = !volunteerPhone.isNullOrBlank()
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
-        Text("Волонтер найден и уже спешит к Вам!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(16.dp))
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                when {
-                    loadingContact -> {
-                        Text("Загружаем контакты волонтёра…", color = Color.Gray)
-                        Spacer(Modifier.height(8.dp))
-                        CircularProgressIndicator(Modifier.size(36.dp))
-                    }
-                    contactError != null -> {
-                        Text(contactError, color = MaterialTheme.colorScheme.error)
-                    }
-                    else -> {
-                        Text("Волонтёр", color = Color.Gray)
-                        Text(
-                            if (nameOk) volunteerName!! else "Имя не указано в профиле",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text("Телефон", color = Color.Gray)
-                        if (phoneOk) {
-                            Text(volunteerPhone!!, style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(12.dp))
-                            Button(
-                                onClick = {
-                                    val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                                        data = Uri.parse("tel:${volunteerPhone}")
-                                    }
-                                    context.startActivity(dialIntent)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Позвонить")
+    DobrovichekWardBackground {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                "Волонтер найден!",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = DobrovichekColors.NavyText,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(18.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = DobrovichekCardShape,
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(Modifier.padding(18.dp)) {
+                    when {
+                        loadingContact -> {
+                            Text("Загружаем контакты…", color = DobrovichekColors.GreySecondary)
+                            Spacer(Modifier.height(8.dp))
+                            CircularProgressIndicator(
+                                Modifier.size(36.dp),
+                                color = DobrovichekColors.BluePrimary
+                            )
+                        }
+                        contactError != null -> {
+                            Text(contactError, color = MaterialTheme.colorScheme.error)
+                        }
+                        else -> {
+                            Text("Волонтёр", color = DobrovichekColors.GreySecondary, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (nameOk) volunteerName!! else "Имя не указано в профиле",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = DobrovichekColors.NavyText
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text("Телефон", color = DobrovichekColors.GreySecondary, style = MaterialTheme.typography.bodyMedium)
+                            if (phoneOk) {
+                                Text(volunteerPhone!!, style = MaterialTheme.typography.titleMedium, color = DobrovichekColors.NavyText)
+                                Spacer(Modifier.height(14.dp))
+                                Button(
+                                    onClick = {
+                                        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                                            data = Uri.parse("tel:${volunteerPhone}")
+                                        }
+                                        context.startActivity(dialIntent)
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    shape = DobrovichekCardShape,
+                                    colors = ButtonDefaults.buttonColors(containerColor = DobrovichekColors.MintBorder)
+                                ) {
+                                    Text("Позвонить", color = Color.White, fontWeight = FontWeight.SemiBold)
+                                }
+                            } else {
+                                Text("Не указан в профиле", style = MaterialTheme.typography.bodyLarge, color = DobrovichekColors.GreySecondary)
                             }
-                        } else {
-                            Text("Не указан в профиле", style = MaterialTheme.typography.bodyLarge, color = Color.Gray)
                         }
                     }
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "${state.category.title} · ${state.address}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = DobrovichekColors.GreySecondary
+                    )
                 }
+            }
+            state.error?.let {
                 Spacer(Modifier.height(12.dp))
-                Text("${state.category.title}, ${state.address}", color = Color.Gray)
+                Text(it, color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(Modifier.height(22.dp))
+            GradientPrimaryButton(
+                text = "Мне помогли! Закрыть заявку",
+                onClick = onCompleteHelp,
+                enabled = !state.isLoading
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                enabled = !state.isLoading,
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = DobrovichekCardShape,
+                border = BorderStroke(1.dp, DobrovichekColors.CardBorderSubtle),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = DobrovichekColors.NavyText)
+            ) {
+                Text("Отменить заявку")
             }
         }
-        Spacer(Modifier.height(24.dp))
-        Button(enabled = !state.isLoading, onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
-            Text("Отменить заявку")
+    }
+}
+
+@Composable
+private fun RateVolunteerScreen(
+    userRepository: UserRepository,
+    volunteerId: String,
+    onHome: () -> Unit,
+    onSubmitRating: (Int) -> Unit
+) {
+    var volunteerLabel by remember { mutableStateOf<String?>(null) }
+    var score by remember { mutableStateOf(0) }
+    LaunchedEffect(volunteerId) {
+        volunteerLabel = withContext(Dispatchers.IO) {
+            userRepository.getVolunteerFirstNameForRating(volunteerId)
+        }
+    }
+    val nameForText = volunteerLabel?.trim()?.takeIf { it.isNotEmpty() } ?: "волонтёра"
+    DobrovichekWardBackground {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 28.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "Помощь оказана",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = DobrovichekColors.NavyText,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Пожалуйста, оцените волонтёра $nameForText.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = DobrovichekColors.NavyText,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(24.dp))
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                for (i in 1..5) {
+                    Text(
+                        "★",
+                        modifier = Modifier
+                            .clickable { score = i }
+                            .padding(horizontal = 6.dp),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = if (i <= score) Color(0xFFFFB74D) else Color(0xFFE0E0E0)
+                    )
+                }
+            }
+            Spacer(Modifier.height(32.dp))
+            GradientPrimaryButton(
+                text = "Оценить",
+                onClick = { onSubmitRating(score) },
+                enabled = score in 1..5
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onHome,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = DobrovichekCardShape,
+                border = BorderStroke(1.dp, DobrovichekColors.CardBorderSubtle),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = DobrovichekColors.NavyText)
+            ) {
+                Text("На главную")
+            }
         }
     }
 }
@@ -1361,24 +2214,48 @@ private fun VolunteerFoundScreen(
 @Composable
 private fun SelectCard(
     title: String,
+    subtitle: String? = null,
     selected: Boolean,
-    tint: Color,
+    backgroundColor: Color,
+    accentBorderColor: Color,
     onClick: () -> Unit
 ) {
-    val borderColor = if (selected) Color(0xFF3CB371) else Color(0xFFE0E0E0)
+    val borderColor = if (selected) accentBorderColor else DobrovichekColors.CardBorderSubtle
+    val borderWidth = if (selected) 2.dp else 1.dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .background(tint, RoundedCornerShape(18.dp))
+            .padding(vertical = 6.dp)
+            .clip(DobrovichekCardShape)
+            .border(borderWidth, borderColor, DobrovichekCardShape)
+            .background(backgroundColor, DobrovichekCardShape)
             .clickable(onClick = onClick)
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = if (selected) "✓  $title" else title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Medium,
-            color = borderColor
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = DobrovichekColors.NavyText
+            )
+            subtitle?.takeIf { it.isNotBlank() }?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = DobrovichekColors.GreySecondary
+                )
+            }
+        }
+        if (selected) {
+            Text(
+                text = "✓",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = accentBorderColor
+            )
+        }
     }
 }

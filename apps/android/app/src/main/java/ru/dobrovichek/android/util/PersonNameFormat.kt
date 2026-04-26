@@ -12,7 +12,6 @@ object PersonNameFormat {
 
     fun firstNameOnly(firstName: String): String = firstName.trim()
 
-    /** Имя и фамилия волонтёра для экрана подопечного. */
     fun volunteerForWard(firstName: String?, lastName: String?): String {
         return listOfNotNull(
             firstName?.trim()?.takeIf { it.isNotEmpty() },

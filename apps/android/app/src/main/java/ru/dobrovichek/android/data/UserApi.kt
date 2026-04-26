@@ -9,6 +9,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import ru.dobrovichek.android.BuildConfig
@@ -22,7 +23,6 @@ data class UpdateMyProfilePayload(
     val city: String? = null
 )
 
-/** Ответ {@code PUT /api/v1/users/me} (поля опциональны — парсим только нужное). */
 data class UserProfileMeDto(
     val id: String? = null,
     val role: String? = null,
@@ -47,13 +47,33 @@ data class VolunteerProfileDto(
     val completedRequestsCount: Int? = null
 )
 
+data class CreateVolunteerRatingPayload(
+    val requestId: String,
+    val score: Int
+)
+
 interface UserApi {
     @PUT("api/v1/users/me")
     suspend fun updateMyProfile(@Body payload: UpdateMyProfilePayload): UserProfileMeDto
 
     @GET("api/v1/volunteers/{volunteerId}")
     suspend fun getVolunteerProfile(@Path("volunteerId") volunteerId: String): VolunteerProfileDto
+
+    @POST("api/v1/volunteers/{volunteerId}/ratings")
+    suspend fun createVolunteerRating(
+        @Path("volunteerId") volunteerId: String,
+        @Body payload: CreateVolunteerRatingPayload
+    ): VolunteerRatingResponseDto
 }
+
+data class VolunteerRatingResponseDto(
+    val id: String? = null,
+    val requestId: String? = null,
+    val volunteerId: String? = null,
+    val wardId: String? = null,
+    val score: Int? = null,
+    val createdAt: String? = null
+)
 
 object UserApiFactory {
     fun create(sessionProvider: () -> UserSession?): UserApi {

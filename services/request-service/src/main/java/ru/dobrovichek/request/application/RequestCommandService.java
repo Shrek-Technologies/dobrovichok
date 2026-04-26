@@ -2,6 +2,7 @@ package ru.dobrovichek.request.application;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.dobrovichek.contracts.RequestStatus;
 import ru.dobrovichek.contracts.UserRole;
 import ru.dobrovichek.request.api.CreateRequestRequest;
 import ru.dobrovichek.request.api.CurrentUser;
@@ -80,16 +81,48 @@ public class RequestCommandService {
 
     @Transactional
     public HelpRequest complete(UUID requestId, CurrentUser currentUser) {
-        requireRole(currentUser, UserRole.VOLUNTEER, "Only volunteers can complete requests");
-
         HelpRequest request = findExisting(requestId);
-        if (!currentUser.userId().equals(request.getVolunteerId())) {
-            throw new ForbiddenException("Only the assigned volunteer can complete the request");
+        if (request.getStatus() != RequestStatus.ACCEPTED) {
+            throw new ConflictException("Only accepted requests can be completed");
+        }
+        if (currentUser.role() == UserRole.VOLUNTEER) {
+            if (!currentUser.userId().equals(request.getVolunteerId())) {
+                throw new ForbiddenException("Only the assigned volunteer can complete the request");
+            }
+        } else if (currentUser.role() == UserRole.WARD) {
+            if (!currentUser.userId().equals(request.getWardId())) {
+                throw new ForbiddenException("Only the ward owner can complete this request");
+            }
+        } else {
+            throw new ForbiddenException("Only ward or assigned volunteer can complete the request");
         }
 
         request.complete(Instant.now(clock));
 
         HelpRequest saved = requestRepository.save(request);
+        eventPublisher.publishStatusChanged(saved);
+        return saved;
+    }
+
+    @Transactional
+    public HelpRequest abandonByVolunteer(UUID requestId, CurrentUser currentUser) {
+        requireRole(currentUser, UserRole.VOLUNTEER, "Only volunteers can release an accepted request");
+
+        HelpRequest request = findExisting(requestId);
+        if (request.getStatus() != RequestStatus.ACCEPTED) {
+            throw new ConflictException("Only accepted requests can be released");
+        }
+        if (!currentUser.userId().equals(request.getVolunteerId())) {
+            throw new ForbiddenException("Only the assigned volunteer can release this request");
+        }
+
+        UUID wardId = request.getWardId();
+        UUID volunteerId = request.getVolunteerId();
+        Instant now = Instant.now(clock);
+        request.abandonByVolunteer(now);
+
+        HelpRequest saved = requestRepository.save(request);
+        eventPublisher.publishVolunteerAbandoned(saved.getId(), wardId, volunteerId, now);
         eventPublisher.publishStatusChanged(saved);
         return saved;
     }

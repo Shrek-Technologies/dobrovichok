@@ -73,6 +73,12 @@ interface RequestApi {
 
     @POST("api/v1/requests/{requestId}/cancel")
     suspend fun cancelRequest(@Path("requestId") requestId: String): RequestResponseDto
+
+    @POST("api/v1/requests/{requestId}/complete")
+    suspend fun completeRequest(@Path("requestId") requestId: String): RequestResponseDto
+
+    @POST("api/v1/requests/{requestId}/abandon-volunteer")
+    suspend fun abandonVolunteer(@Path("requestId") requestId: String): RequestResponseDto
 }
 
 object RequestApiFactory {

@@ -41,6 +41,21 @@ public class RabbitUserEventConfiguration {
     }
 
     @Bean
+    public Queue userRequestVolunteerAbandonedQueue() {
+        return QueueBuilder.durable(RequestEventTopology.USER_REQUEST_VOLUNTEER_ABANDONED_QUEUE).build();
+    }
+
+    @Bean
+    public Binding userRequestVolunteerAbandonedBinding(
+            @Qualifier("userRequestVolunteerAbandonedQueue") Queue userRequestVolunteerAbandonedQueue,
+            TopicExchange requestEventsExchange
+    ) {
+        return BindingBuilder.bind(userRequestVolunteerAbandonedQueue)
+                .to(requestEventsExchange)
+                .with(RequestEventTopology.REQUEST_VOLUNTEER_ABANDONED_ROUTING_KEY);
+    }
+
+    @Bean
     public MessageConverter rabbitMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);
     }

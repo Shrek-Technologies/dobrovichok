@@ -101,4 +101,13 @@ public class RequestController {
         HelpRequest updated = commandService.complete(requestId, currentUser);
         return mapper.toResponse(updated, true);
     }
+
+    @PostMapping("/{requestId}/abandon-volunteer")
+    public RequestResponse abandonVolunteer(
+            @PathVariable UUID requestId,
+            CurrentUser currentUser
+    ) {
+        HelpRequest updated = commandService.abandonByVolunteer(requestId, currentUser);
+        return mapper.toResponse(updated, queryService.canViewContact(updated, currentUser));
+    }
 }

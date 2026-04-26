@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.17.xsd">
+
+    <changeSet id="004-volunteer-ratings-unique-req-vol" author="dobrovichek">
+        <dropUniqueConstraint tableName="volunteer_ratings" constraintName="uk_volunteer_ratings_request_id"/>
+        <addUniqueConstraint tableName="volunteer_ratings"
+                             columnNames="request_id, volunteer_id"
+                             constraintName="uk_volunteer_ratings_request_volunteer"/>
+    </changeSet>
+</databaseChangeLog>
