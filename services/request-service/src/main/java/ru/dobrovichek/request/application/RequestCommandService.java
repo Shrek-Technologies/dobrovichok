@@ -38,6 +38,9 @@ public class RequestCommandService {
                 currentUser.userId(),
                 command.description(),
                 command.contactPhone(),
+                command.wardFirstName(),
+                command.wardLastName(),
+                command.wardPatronymic(),
                 command.location(),
                 Instant.now(clock)
         );

@@ -1,6 +1,7 @@
 package ru.dobrovichek.identity.application;
 
 import org.springframework.stereotype.Service;
+import ru.dobrovichek.contracts.PersonNameFormat;
 import ru.dobrovichek.contracts.UserRole;
 import ru.dobrovichek.identity.api.AuthResponse;
 import ru.dobrovichek.identity.api.LoginRequest;
@@ -17,9 +18,12 @@ public class AuthService {
 
     public AuthResponse register(RegisterRequest request) {
         UserRole role = request.role() == null ? UserRole.WARD : request.role();
+        String patronymic = blankToNull(request.patronymic());
         RegisteredUser user = new RegisteredUser(
                 UUID.randomUUID(),
-                request.fullName().trim(),
+                request.firstName().trim(),
+                request.lastName().trim(),
+                patronymic,
                 normalizePhone(request.phone()),
                 request.password(),
                 role
@@ -43,15 +47,33 @@ public class AuthService {
         return phone.replaceAll("[^0-9+]", "");
     }
 
+    private static String blankToNull(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
     private record RegisteredUser(
             UUID userId,
-            String fullName,
+            String firstName,
+            String lastName,
+            String patronymic,
             String phone,
             String password,
             UserRole role
     ) {
         AuthResponse toResponse() {
-            return new AuthResponse(userId, fullName, phone, role);
+            return new AuthResponse(
+                    userId,
+                    firstName,
+                    lastName,
+                    patronymic,
+                    PersonNameFormat.fullFormal(firstName, patronymic, lastName),
+                    phone,
+                    role
+            );
         }
     }
 }

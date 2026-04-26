@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import ru.dobrovichek.contracts.PersonNameFormat;
 import ru.dobrovichek.contracts.UserRole;
 
 import java.math.BigDecimal;
@@ -27,6 +28,15 @@ public class UserProfile {
 
     @Column(name = "full_name", nullable = false, length = 200)
     private String fullName;
+
+    @Column(name = "first_name", nullable = false, length = 60)
+    private String firstName;
+
+    @Column(name = "last_name", nullable = false, length = 60)
+    private String lastName;
+
+    @Column(name = "patronymic", length = 60)
+    private String patronymic;
 
     @Column(name = "phone", nullable = false, length = 32)
     private String phone;
@@ -60,6 +70,9 @@ public class UserProfile {
         profile.id = Objects.requireNonNull(id);
         profile.role = Objects.requireNonNull(role);
         profile.fullName = "";
+        profile.firstName = "";
+        profile.lastName = "";
+        profile.patronymic = null;
         profile.phone = "";
         profile.rating = BigDecimal.ZERO.setScale(2);
         profile.ratingCount = 0;
@@ -69,8 +82,19 @@ public class UserProfile {
         return profile;
     }
 
-    public void updateProfile(String fullName, String phone, String bio, String city, Instant now) {
-        this.fullName = Objects.requireNonNull(fullName).trim();
+    public void updateProfile(
+            String firstName,
+            String lastName,
+            String patronymic,
+            String phone,
+            String bio,
+            String city,
+            Instant now
+    ) {
+        this.firstName = Objects.requireNonNull(firstName).trim();
+        this.lastName = Objects.requireNonNull(lastName).trim();
+        this.patronymic = normalize(patronymic);
+        this.fullName = PersonNameFormat.fullFormal(this.firstName, this.patronymic, this.lastName);
         this.phone = Objects.requireNonNull(phone).trim();
         this.bio = normalize(bio);
         this.city = normalize(city);
@@ -112,6 +136,18 @@ public class UserProfile {
 
     public String getFullName() {
         return fullName;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public String getPatronymic() {
+        return patronymic;
     }
 
     public String getPhone() {

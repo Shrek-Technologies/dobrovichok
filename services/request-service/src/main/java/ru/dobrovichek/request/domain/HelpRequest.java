@@ -33,6 +33,15 @@ public class HelpRequest {
     @Column(name = "contact_phone", nullable = false, length = 32)
     private String contactPhone;
 
+    @Column(name = "ward_first_name", nullable = false, length = 60)
+    private String wardFirstName;
+
+    @Column(name = "ward_last_name", nullable = false, length = 60)
+    private String wardLastName;
+
+    @Column(name = "ward_patronymic", length = 60)
+    private String wardPatronymic;
+
     @Column(name = "latitude", nullable = false)
     private double latitude;
 
@@ -65,6 +74,9 @@ public class HelpRequest {
             UUID wardId,
             String description,
             String contactPhone,
+            String wardFirstName,
+            String wardLastName,
+            String wardPatronymic,
             GeoPoint location,
             Instant now
     ) {
@@ -73,12 +85,23 @@ public class HelpRequest {
         request.wardId = Objects.requireNonNull(wardId);
         request.description = Objects.requireNonNull(description).trim();
         request.contactPhone = Objects.requireNonNull(contactPhone).trim();
+        request.wardFirstName = Objects.requireNonNull(wardFirstName).trim();
+        request.wardLastName = Objects.requireNonNull(wardLastName).trim();
+        request.wardPatronymic = normalizeOptional(wardPatronymic);
         request.latitude = location.latitude();
         request.longitude = location.longitude();
         request.status = RequestStatus.CREATED;
         request.createdAt = now;
         request.updatedAt = now;
         return request;
+    }
+
+    private static String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String t = value.trim();
+        return t.isEmpty() ? null : t;
     }
 
     public void accept(UUID volunteerId, Instant now) {
@@ -130,6 +153,18 @@ public class HelpRequest {
 
     public String getContactPhone() {
         return contactPhone;
+    }
+
+    public String getWardFirstName() {
+        return wardFirstName;
+    }
+
+    public String getWardLastName() {
+        return wardLastName;
+    }
+
+    public String getWardPatronymic() {
+        return wardPatronymic;
     }
 
     public double getLatitude() {

@@ -72,6 +72,8 @@ class UserControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(WARD_ID.toString()))
                 .andExpect(jsonPath("$.role").value("WARD"))
+                .andExpect(jsonPath("$.firstName").value(""))
+                .andExpect(jsonPath("$.lastName").value(""))
                 .andExpect(jsonPath("$.fullName").value(""));
     }
 
@@ -80,7 +82,9 @@ class UserControllerIntegrationTest {
         mockMvc.perform(put("/api/v1/users/me")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(Map.of(
-                                "fullName", "Ivan Petrov",
+                                "firstName", "Ivan",
+                                "lastName", "Petrov",
+                                "patronymic", "",
                                 "phone", "+79990000000",
                                 "bio", "Experienced volunteer",
                                 "city", "Moscow"
@@ -90,6 +94,8 @@ class UserControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(VOLUNTEER_ID.toString()))
                 .andExpect(jsonPath("$.role").value("VOLUNTEER"))
+                .andExpect(jsonPath("$.firstName").value("Ivan"))
+                .andExpect(jsonPath("$.lastName").value("Petrov"))
                 .andExpect(jsonPath("$.fullName").value("Ivan Petrov"))
                 .andExpect(jsonPath("$.phone").value("+79990000000"))
                 .andExpect(jsonPath("$.city").value("Moscow"));
@@ -98,6 +104,8 @@ class UserControllerIntegrationTest {
                         .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
                         .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.firstName").value("Ivan"))
+                .andExpect(jsonPath("$.lastName").value("Petrov"))
                 .andExpect(jsonPath("$.fullName").value("Ivan Petrov"))
                 .andExpect(jsonPath("$.phone").value("+79990000000"));
     }
@@ -107,7 +115,9 @@ class UserControllerIntegrationTest {
         mockMvc.perform(put("/api/v1/users/me")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(Map.of(
-                                "fullName", "Elena Smirnova",
+                                "firstName", "Elena",
+                                "lastName", "Smirnova",
+                                "patronymic", "",
                                 "phone", "+79991111111",
                                 "bio", "Volunteer driver",
                                 "city", "Saint Petersburg"
@@ -123,6 +133,8 @@ class UserControllerIntegrationTest {
                         .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(VOLUNTEER_ID.toString()))
+                .andExpect(jsonPath("$.firstName").value("Elena"))
+                .andExpect(jsonPath("$.lastName").value("Smirnova"))
                 .andExpect(jsonPath("$.fullName").value("Elena Smirnova"))
                 .andExpect(jsonPath("$.completedRequestsCount").value(2));
 
@@ -141,7 +153,9 @@ class UserControllerIntegrationTest {
         mockMvc.perform(put("/api/v1/users/me")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(Map.of(
-                                "fullName", "Elena Smirnova",
+                                "firstName", "Elena",
+                                "lastName", "Smirnova",
+                                "patronymic", "",
                                 "phone", "+79991111111",
                                 "bio", "Volunteer driver",
                                 "city", "Saint Petersburg"

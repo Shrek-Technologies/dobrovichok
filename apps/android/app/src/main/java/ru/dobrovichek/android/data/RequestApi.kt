@@ -22,6 +22,9 @@ data class GeoPointDto(
 data class CreateRequestPayload(
     val description: String,
     val contactPhone: String,
+    val wardFirstName: String,
+    val wardLastName: String,
+    val wardPatronymic: String? = null,
     val location: GeoPointDto
 )
 
@@ -31,6 +34,10 @@ data class RequestResponseDto(
     val volunteerId: String? = null,
     val description: String? = null,
     val contactPhone: String? = null,
+    val wardFirstName: String? = null,
+    val wardLastName: String? = null,
+    val wardPatronymic: String? = null,
+    val wardFullName: String? = null,
     val location: GeoPointDto? = null,
     val status: String,
     val createdAt: String? = null
@@ -39,6 +46,7 @@ data class RequestResponseDto(
 data class RequestSummaryDto(
     val id: String,
     val wardId: String,
+    val wardFirstName: String? = null,
     val description: String,
     val location: GeoPointDto,
     val status: String,

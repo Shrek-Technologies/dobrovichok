@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface {
                     WardApp(
+                        sessionStore = sessionStore,
                         authRepository = authRepository,
                         requestRepository = requestRepository,
                         userRepository = userRepository

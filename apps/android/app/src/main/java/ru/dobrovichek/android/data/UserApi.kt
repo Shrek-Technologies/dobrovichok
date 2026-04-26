@@ -14,7 +14,9 @@ import retrofit2.http.Path
 import ru.dobrovichek.android.BuildConfig
 
 data class UpdateMyProfilePayload(
-    val fullName: String,
+    val firstName: String,
+    val lastName: String,
+    val patronymic: String? = null,
     val phone: String,
     val bio: String? = null,
     val city: String? = null
@@ -24,12 +26,18 @@ data class UpdateMyProfilePayload(
 data class UserProfileMeDto(
     val id: String? = null,
     val role: String? = null,
+    val firstName: String? = null,
+    val lastName: String? = null,
+    val patronymic: String? = null,
     val fullName: String? = null,
     val phone: String? = null
 )
 
 data class VolunteerProfileDto(
     val id: String,
+    val firstName: String? = null,
+    val lastName: String? = null,
+    val patronymic: String? = null,
     val fullName: String? = null,
     val phone: String? = null,
     val bio: String? = null,
@@ -80,4 +88,3 @@ object UserApiFactory {
             .create(UserApi::class.java)
     }
 }
-

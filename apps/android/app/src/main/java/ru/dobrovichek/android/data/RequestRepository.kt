@@ -10,7 +10,11 @@ class RequestRepository(
         apartment: String,
         comment: String,
         latitude: Double,
-        longitude: Double
+        longitude: Double,
+        wardFirstName: String,
+        wardLastName: String,
+        wardPatronymic: String?,
+        contactPhone: String
     ): String {
         val description = buildString {
             append("Категория: ").append(category)
@@ -27,7 +31,10 @@ class RequestRepository(
         val response = requestApi.createRequest(
             CreateRequestPayload(
                 description = description,
-                contactPhone = "+79990000000",
+                contactPhone = contactPhone,
+                wardFirstName = wardFirstName,
+                wardLastName = wardLastName,
+                wardPatronymic = wardPatronymic?.takeIf { it.isNotBlank() },
                 location = GeoPointDto(
                     latitude = latitude,
                     longitude = longitude

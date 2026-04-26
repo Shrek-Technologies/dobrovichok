@@ -11,7 +11,9 @@ import retrofit2.http.POST
 import ru.dobrovichek.android.BuildConfig
 
 data class RegisterPayload(
-    val fullName: String,
+    val firstName: String,
+    val lastName: String,
+    val patronymic: String? = null,
     val phone: String,
     val password: String,
     val role: String
@@ -24,6 +26,9 @@ data class LoginPayload(
 
 data class AuthResponseDto(
     val userId: String,
+    val firstName: String,
+    val lastName: String,
+    val patronymic: String? = null,
     val fullName: String,
     val phone: String,
     val role: String

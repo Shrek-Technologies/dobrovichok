@@ -1,13 +1,24 @@
 package ru.dobrovichek.android.data
 
+import ru.dobrovichek.android.util.PersonNameFormat
+
 class AuthRepository(
     private val authApi: AuthApi,
     private val sessionStore: SessionStore
 ) {
-    suspend fun register(fullName: String, phone: String, password: String, role: String): UserSession {
+    suspend fun register(
+        firstName: String,
+        lastName: String,
+        patronymic: String?,
+        phone: String,
+        password: String,
+        role: String
+    ): UserSession {
         val response = authApi.register(
             RegisterPayload(
-                fullName = fullName,
+                firstName = firstName,
+                lastName = lastName,
+                patronymic = patronymic?.takeIf { it.isNotBlank() },
                 phone = phone,
                 password = password,
                 role = role
@@ -26,10 +37,14 @@ class AuthRepository(
     fun logout() = sessionStore.clear()
 
     private fun AuthResponseDto.toSession(): UserSession {
+        val pat = patronymic?.takeIf { it.isNotBlank() }
         return UserSession(
             userId = userId,
             role = role,
-            fullName = fullName,
+            firstName = firstName,
+            lastName = lastName,
+            patronymic = pat,
+            fullName = fullName.ifBlank { PersonNameFormat.fullFormal(firstName, pat, lastName) },
             phone = phone
         )
     }

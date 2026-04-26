@@ -9,6 +9,9 @@ import java.util.UUID;
 public record UserProfileResponse(
         UUID id,
         UserRole role,
+        String firstName,
+        String lastName,
+        String patronymic,
         String fullName,
         String phone,
         String bio,

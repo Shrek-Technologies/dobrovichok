@@ -1,6 +1,7 @@
 package ru.dobrovichek.request.application;
 
 import org.springframework.stereotype.Component;
+import ru.dobrovichek.contracts.PersonNameFormat;
 import ru.dobrovichek.request.api.RequestResponse;
 import ru.dobrovichek.request.api.RequestSummaryResponse;
 import ru.dobrovichek.request.domain.HelpRequest;
@@ -15,6 +16,14 @@ public class RequestMapper {
                 request.getVolunteerId(),
                 request.getDescription(),
                 includeContactPhone ? request.getContactPhone() : null,
+                request.getWardFirstName(),
+                request.getWardLastName(),
+                request.getWardPatronymic(),
+                PersonNameFormat.fullFormal(
+                        request.getWardFirstName(),
+                        request.getWardPatronymic(),
+                        request.getWardLastName()
+                ),
                 request.getLocation(),
                 request.getStatus(),
                 request.getCreatedAt(),
@@ -29,6 +38,7 @@ public class RequestMapper {
         return new RequestSummaryResponse(
                 request.getId(),
                 request.getWardId(),
+                PersonNameFormat.firstNameOnly(request.getWardFirstName()),
                 request.getDescription(),
                 request.getLocation(),
                 request.getStatus(),

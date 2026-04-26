@@ -127,6 +127,7 @@ class RequestControllerIntegrationTest {
                         .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
                         .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].wardFirstName").value("Ольга"))
                 .andExpect(jsonPath("$[0].description").value("Need groceries"))
                 .andExpect(jsonPath("$[0].distanceKm").isNumber());
     }
@@ -156,6 +157,9 @@ class RequestControllerIntegrationTest {
         return Map.of(
                 "description", "Need groceries",
                 "contactPhone", "+79990000000",
+                "wardFirstName", "Ольга",
+                "wardLastName", "Козлова",
+                "wardPatronymic", "Сергеевна",
                 "location", Map.of(
                         "latitude", 59.9343,
                         "longitude", 30.3351

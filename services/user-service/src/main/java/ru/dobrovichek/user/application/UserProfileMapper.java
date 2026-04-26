@@ -16,6 +16,9 @@ public class UserProfileMapper {
         return new UserProfileResponse(
                 profile.getId(),
                 profile.getRole(),
+                profile.getFirstName(),
+                profile.getLastName(),
+                profile.getPatronymic(),
                 profile.getFullName(),
                 profile.getPhone(),
                 profile.getBio(),
@@ -31,6 +34,9 @@ public class UserProfileMapper {
     public VolunteerProfileResponse toVolunteerProfileResponse(UserProfile profile) {
         return new VolunteerProfileResponse(
                 profile.getId(),
+                profile.getFirstName(),
+                profile.getLastName(),
+                profile.getPatronymic(),
                 profile.getFullName(),
                 profile.getPhone(),
                 profile.getBio(),

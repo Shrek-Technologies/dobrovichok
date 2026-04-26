@@ -9,6 +9,7 @@ import java.util.UUID;
 public record RequestSummaryResponse(
         UUID id,
         UUID wardId,
+        String wardFirstName,
         String description,
         GeoPoint location,
         RequestStatus status,

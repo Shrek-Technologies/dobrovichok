@@ -37,7 +37,15 @@ public class UserProfileService {
     @Transactional
     public UserProfile upsertCurrent(CurrentUser currentUser, UpdateMyProfileRequest request) {
         UserProfile profile = getOrCreateCurrent(currentUser);
-        profile.updateProfile(request.fullName(), request.phone(), request.bio(), request.city(), Instant.now(clock));
+        profile.updateProfile(
+                request.firstName(),
+                request.lastName(),
+                request.patronymic(),
+                request.phone(),
+                request.bio(),
+                request.city(),
+                Instant.now(clock)
+        );
         return userProfileRepository.save(profile);
     }
 

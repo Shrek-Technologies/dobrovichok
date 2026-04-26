@@ -64,7 +64,9 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 import ru.dobrovichek.android.data.AuthRepository
 import ru.dobrovichek.android.data.RequestRepository
+import ru.dobrovichek.android.data.SessionStore
 import ru.dobrovichek.android.data.UserSession
+import ru.dobrovichek.android.util.PersonNameFormat
 import ru.dobrovichek.android.data.RequestSummaryDto
 import ru.dobrovichek.android.data.RequestResponseDto
 import ru.dobrovichek.android.data.UserRepository
@@ -120,7 +122,8 @@ data class WardUiState(
 )
 
 class WardViewModel(
-    private val repository: RequestRepository
+    private val repository: RequestRepository,
+    private val sessionStore: SessionStore
 ) : ViewModel() {
     private val _state = MutableStateFlow(WardUiState())
     val state: StateFlow<WardUiState> = _state.asStateFlow()
@@ -145,6 +148,7 @@ class WardViewModel(
     }
 
     fun createRequest(onSuccess: () -> Unit) {
+        val session = sessionStore.load() ?: return
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             runCatching {
@@ -155,7 +159,11 @@ class WardViewModel(
                     apartment = state.value.apartment,
                     comment = state.value.comment,
                     latitude = state.value.latitude,
-                    longitude = state.value.longitude
+                    longitude = state.value.longitude,
+                    wardFirstName = session.firstName.trim(),
+                    wardLastName = session.lastName.trim(),
+                    wardPatronymic = session.patronymic?.trim()?.takeIf { it.isNotEmpty() },
+                    contactPhone = session.phone.trim().ifBlank { "+79990000000" }
                 )
             }.onSuccess { requestId ->
                 _state.update { it.copy(createdRequestId = requestId, assignedVolunteerId = null, isLoading = false) }
@@ -225,12 +233,20 @@ class WardFoundViewModel(private val userRepository: UserRepository) : ViewModel
     }
 }
 
+enum class AuthRegisterStep {
+    CHOOSE_ROLE,
+    ENTER_DETAILS
+}
+
 data class AuthUiState(
-    val fullName: String = "",
+    val firstName: String = "",
+    val lastName: String = "",
+    val patronymic: String = "",
     val phone: String = "",
     val password: String = "",
     val role: String = "WARD",
     val isRegisterMode: Boolean = false,
+    val registerStep: AuthRegisterStep = AuthRegisterStep.CHOOSE_ROLE,
     val isLoading: Boolean = false,
     val error: String? = null,
     val session: UserSession? = null
@@ -242,14 +258,34 @@ class AuthViewModel(
     private val _state = MutableStateFlow(AuthUiState(session = authRepository.currentSession()))
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
-    fun setRegisterMode(enabled: Boolean) = _state.update { it.copy(isRegisterMode = enabled, error = null) }
-    fun updateFullName(value: String) = _state.update { it.copy(fullName = value) }
+    fun setRegisterMode(enabled: Boolean) = _state.update {
+        it.copy(
+            isRegisterMode = enabled,
+            registerStep = if (enabled) AuthRegisterStep.CHOOSE_ROLE else AuthRegisterStep.CHOOSE_ROLE,
+            error = null
+        )
+    }
+
+    fun selectRegisterRole(role: String) = _state.update {
+        it.copy(role = role, registerStep = AuthRegisterStep.ENTER_DETAILS, error = null)
+    }
+
+    fun backFromRegisterDetailsToRole() = _state.update {
+        it.copy(registerStep = AuthRegisterStep.CHOOSE_ROLE, error = null)
+    }
+
+    fun updateFirstName(value: String) = _state.update { it.copy(firstName = value) }
+    fun updateLastName(value: String) = _state.update { it.copy(lastName = value) }
+    fun updatePatronymic(value: String) = _state.update { it.copy(patronymic = value) }
     fun updatePhone(value: String) = _state.update { it.copy(phone = value) }
     fun updatePassword(value: String) = _state.update { it.copy(password = value) }
-    fun updateRole(value: String) = _state.update { it.copy(role = value) }
 
     fun submit() {
-        val validationError = validateAuthInput(state.value)
+        val s = state.value
+        if (s.isRegisterMode && s.registerStep == AuthRegisterStep.CHOOSE_ROLE) {
+            return
+        }
+        val validationError = validateAuthInput(s)
         if (validationError != null) {
             _state.update { it.copy(error = validationError) }
             return
@@ -259,7 +295,9 @@ class AuthViewModel(
             val authAction: suspend () -> UserSession = if (state.value.isRegisterMode) {
                 {
                     authRepository.register(
-                        fullName = state.value.fullName.trim(),
+                        firstName = state.value.firstName.trim(),
+                        lastName = state.value.lastName.trim(),
+                        patronymic = state.value.patronymic.trim().takeIf { it.isNotEmpty() },
                         phone = state.value.phone.trim(),
                         password = state.value.password,
                         role = state.value.role
@@ -288,15 +326,50 @@ class AuthViewModel(
         _state.update { AuthUiState() }
     }
 
+    private val namePartRegex = Regex("^[\\p{L}]([\\p{L}\\-']){0,59}$")
+
     private fun validateAuthInput(state: AuthUiState): String? {
-        if (state.isRegisterMode && state.fullName.isBlank()) {
-            return "Введите ФИО"
+        if (state.isRegisterMode && state.registerStep == AuthRegisterStep.ENTER_DETAILS) {
+            validateNamePart("Имя", state.firstName)?.let { return it }
+            validateNamePart("Фамилия", state.lastName)?.let { return it }
+            if (state.patronymic.isNotBlank()) {
+                validateNamePart("Отчество", state.patronymic)?.let { return it }
+            }
+            validatePassword(state.password)?.let { return it }
+        } else {
+            if (state.password.isBlank()) {
+                return "Введите пароль"
+            }
         }
         if (!state.phone.matches(Regex("^[0-9+() -]{7,20}$"))) {
             return "Введите корректный телефон (от 7 символов, можно +7...)"
         }
-        if (state.password.length < 3) {
-            return "Пароль должен быть не короче 3 символов"
+        return null
+    }
+
+    private fun validateNamePart(label: String, value: String): String? {
+        val t = value.trim()
+        if (t.isEmpty()) {
+            return "$label: обязательное поле"
+        }
+        if (t.length > 60 || !namePartRegex.matches(t)) {
+            return "$label: только буквы, дефис или апостроф, до 60 символов"
+        }
+        return null
+    }
+
+    private fun validatePassword(password: String): String? {
+        if (password.length < 8) {
+            return "Пароль: не менее 8 символов"
+        }
+        if (password.length > 128) {
+            return "Пароль: слишком длинный"
+        }
+        if (!password.any { it.isDigit() }) {
+            return "Пароль: нужна хотя бы одна цифра"
+        }
+        if (!password.any { ch -> ch.isLetter() && ch.isUpperCase() }) {
+            return "Пароль: нужна хотя бы одна заглавная буква"
         }
         return null
     }
@@ -383,6 +456,7 @@ class VolunteerViewModel(
 }
 
 class AppViewModelFactory(
+    private val sessionStore: SessionStore,
     private val authRepository: AuthRepository,
     private val requestRepository: RequestRepository,
     private val userRepository: UserRepository
@@ -394,7 +468,7 @@ class AppViewModelFactory(
         }
         if (modelClass.isAssignableFrom(WardViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return WardViewModel(requestRepository) as T
+            return WardViewModel(requestRepository, sessionStore) as T
         }
         if (modelClass.isAssignableFrom(VolunteerViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
@@ -409,18 +483,26 @@ class AppViewModelFactory(
 }
 
 @Composable
-fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository, userRepository: UserRepository) {
-    val factory = AppViewModelFactory(authRepository, requestRepository, userRepository)
+fun WardApp(
+    sessionStore: SessionStore,
+    authRepository: AuthRepository,
+    requestRepository: RequestRepository,
+    userRepository: UserRepository
+) {
+    val factory = AppViewModelFactory(sessionStore, authRepository, requestRepository, userRepository)
     val authVm: AuthViewModel = viewModel(factory = factory)
     val wardVm: WardViewModel = viewModel(factory = factory)
     val authState by authVm.state.collectAsStateWithLifecycle()
     if (authState.session == null) {
         AuthScreen(
             state = authState,
-            onFullNameChange = authVm::updateFullName,
+            onFirstNameChange = authVm::updateFirstName,
+            onLastNameChange = authVm::updateLastName,
+            onPatronymicChange = authVm::updatePatronymic,
             onPhoneChange = authVm::updatePhone,
             onPasswordChange = authVm::updatePassword,
-            onRoleChange = authVm::updateRole,
+            onRegisterRoleChosen = authVm::selectRegisterRole,
+            onBackFromRegisterDetails = authVm::backFromRegisterDetailsToRole,
             onToggleMode = authVm::setRegisterMode,
             onSubmit = authVm::submit
         )
@@ -428,7 +510,7 @@ fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository
         val session = authState.session!!
         LaunchedEffect(session.userId) {
             withContext(Dispatchers.IO) {
-                userRepository.syncMyProfileAfterAuth(session.fullName, session.phone)
+                userRepository.syncMyProfileAfterAuth(session)
             }
         }
         val wardState by wardVm.state.collectAsStateWithLifecycle()
@@ -697,13 +779,14 @@ private fun VolunteerMapScreen(
 
 @Composable
 private fun VolunteerRequestSheet(item: RequestSummaryDto, onAccept: () -> Unit, onClose: () -> Unit) {
+    val wardShort = item.wardFirstName?.trim()?.takeIf { it.isNotEmpty() } ?: "Подопечный"
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Заявка", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Заявка от $wardShort", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Закрыть") }
         }
         Spacer(Modifier.height(8.dp))
@@ -778,6 +861,17 @@ private fun VolunteerRequestDetailsScreen(state: VolunteerUiState, onBackToMap: 
         }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
+                val wardFull = details.wardFullName?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: PersonNameFormat.fullFormal(
+                        details.wardFirstName.orEmpty(),
+                        details.wardPatronymic,
+                        details.wardLastName.orEmpty()
+                    ).ifBlank { null }
+                wardFull?.let {
+                    Text("Подопечный", color = Color.Gray)
+                    Text(it, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(12.dp))
+                }
                 Text(details.description ?: "", style = MaterialTheme.typography.bodyLarge)
                 Spacer(Modifier.height(12.dp))
                 Text("Телефон подопечного", fontWeight = FontWeight.Medium)
@@ -794,74 +888,151 @@ private fun VolunteerRequestDetailsScreen(state: VolunteerUiState, onBackToMap: 
 @Composable
 private fun AuthScreen(
     state: AuthUiState,
-    onFullNameChange: (String) -> Unit,
+    onFirstNameChange: (String) -> Unit,
+    onLastNameChange: (String) -> Unit,
+    onPatronymicChange: (String) -> Unit,
     onPhoneChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
-    onRoleChange: (String) -> Unit,
+    onRegisterRoleChosen: (String) -> Unit,
+    onBackFromRegisterDetails: () -> Unit,
     onToggleMode: (Boolean) -> Unit,
     onSubmit: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(if (state.isRegisterMode) "Регистрация" else "Вход", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(16.dp))
-        if (state.isRegisterMode) {
-            OutlinedTextField(
-                value = state.fullName,
-                onValueChange = onFullNameChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("ФИО") }
-            )
-            Spacer(Modifier.height(8.dp))
-        }
-        OutlinedTextField(
-            value = state.phone,
-            onValueChange = onPhoneChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Телефон") }
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = state.password,
-            onValueChange = onPasswordChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Пароль") }
-        )
-        if (state.isRegisterMode) {
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    when {
+        state.isRegisterMode && state.registerStep == AuthRegisterStep.CHOOSE_ROLE -> {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text("Выберите роль", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(24.dp))
                 Button(
-                    onClick = { onRoleChange("WARD") },
-                    modifier = Modifier.weight(1f)
-                ) { Text(if (state.role == "WARD") "✓ Подопечный" else "Подопечный") }
+                    onClick = { onRegisterRoleChosen("WARD") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Я хочу получать оперативную помощь", style = MaterialTheme.typography.bodyLarge)
+                }
+                Spacer(Modifier.height(12.dp))
                 Button(
-                    onClick = { onRoleChange("VOLUNTEER") },
-                    modifier = Modifier.weight(1f)
-                ) { Text(if (state.role == "VOLUNTEER") "✓ Волонтёр" else "Волонтёр") }
+                    onClick = { onRegisterRoleChosen("VOLUNTEER") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Я волонтёр и хочу помогать", style = MaterialTheme.typography.bodyLarge)
+                }
+                Spacer(Modifier.height(32.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { onToggleMode(false) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("У меня уже есть аккаунт")
+                }
             }
         }
-        state.error?.let {
-            Spacer(Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
-        }
-        Spacer(Modifier.height(16.dp))
-        Button(
-            enabled = !state.isLoading,
-            onClick = onSubmit,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (state.isRegisterMode) "Зарегистрироваться" else "Войти")
-        }
-        Spacer(Modifier.height(12.dp))
-        HorizontalDivider()
-        Spacer(Modifier.height(12.dp))
-        Button(onClick = { onToggleMode(!state.isRegisterMode) }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (state.isRegisterMode) "У меня уже есть аккаунт" else "Создать новый аккаунт")
+        else -> {
+            val showRegisterFields = state.isRegisterMode && state.registerStep == AuthRegisterStep.ENTER_DETAILS
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    when {
+                        showRegisterFields -> "Регистрация"
+                        else -> "Вход"
+                    },
+                    style = MaterialTheme.typography.titleLarge
+                )
+                if (showRegisterFields) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (state.role == "VOLUNTEER") "Роль: волонтёр" else "Роль: подопечный",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                if (showRegisterFields) {
+                    OutlinedTextField(
+                        value = state.firstName,
+                        onValueChange = onFirstNameChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Имя") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.lastName,
+                        onValueChange = onLastNameChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Фамилия") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.patronymic,
+                        onValueChange = onPatronymicChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Отчество (необязательно)") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                OutlinedTextField(
+                    value = state.phone,
+                    onValueChange = onPhoneChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Телефон") }
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = state.password,
+                    onValueChange = onPasswordChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Пароль") },
+                    supportingText = if (showRegisterFields) {
+                        { Text("Не меньше 8 символов, цифра и заглавная буква", style = MaterialTheme.typography.bodySmall) }
+                    } else null
+                )
+                state.error?.let {
+                    Spacer(Modifier.height(12.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    enabled = !state.isLoading,
+                    onClick = onSubmit,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (showRegisterFields) "Зарегистрироваться" else "Войти")
+                }
+                if (showRegisterFields) {
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = onBackFromRegisterDetails,
+                        enabled = !state.isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Назад к выбору роли")
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { onToggleMode(!state.isRegisterMode) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (state.isRegisterMode) "У меня уже есть аккаунт" else "Создать новый аккаунт")
+                }
+            }
         }
     }
 }
@@ -876,7 +1047,8 @@ private fun HomeScreen(session: UserSession?, onCreate: () -> Unit, onLogout: ()
     ) {
         Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(
-            session?.fullName ?: "Помощь рядом",
+            session?.let { PersonNameFormat.volunteerForWard(it.firstName, it.lastName).ifBlank { it.fullName } }
+                ?: "Помощь рядом",
             style = MaterialTheme.typography.titleMedium,
             color = Color.Gray
         )
