@@ -12,6 +12,8 @@ import ru.dobrovichek.android.data.AuthRepository
 import ru.dobrovichek.android.data.RequestApiFactory
 import ru.dobrovichek.android.data.RequestRepository
 import ru.dobrovichek.android.data.SessionStore
+import ru.dobrovichek.android.data.UserApiFactory
+import ru.dobrovichek.android.data.UserRepository
 import ru.dobrovichek.android.ui.WardApp
 
 class MainActivity : ComponentActivity() {
@@ -26,13 +28,17 @@ class MainActivity : ComponentActivity() {
         val requestRepository = RequestRepository(
             RequestApiFactory.create(sessionProvider = sessionStore::load)
         )
+        val userRepository = UserRepository(
+            UserApiFactory.create(sessionProvider = sessionStore::load)
+        )
 
         setContent {
             MaterialTheme {
                 Surface {
                     WardApp(
                         authRepository = authRepository,
-                        requestRepository = requestRepository
+                        requestRepository = requestRepository,
+                        userRepository = userRepository
                     )
                 }
             }

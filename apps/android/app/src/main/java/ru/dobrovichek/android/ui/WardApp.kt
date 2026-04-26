@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,7 +53,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,6 +67,7 @@ import ru.dobrovichek.android.data.RequestRepository
 import ru.dobrovichek.android.data.UserSession
 import ru.dobrovichek.android.data.RequestSummaryDto
 import ru.dobrovichek.android.data.RequestResponseDto
+import ru.dobrovichek.android.data.UserRepository
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -73,6 +78,7 @@ import com.yandex.mapkit.map.IconStyle
 import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.map.MapObjectTapListener
 import com.yandex.mapkit.user_location.UserLocationLayer
+import com.yandex.mapkit.map.MapObjectCollection
 import com.yandex.runtime.image.ImageProvider
 import android.Manifest
 import androidx.compose.ui.platform.LocalContext
@@ -80,6 +86,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
+import ru.dobrovichek.android.R
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.core.graphics.drawable.toBitmap
+import android.content.Intent
+import android.net.Uri
 
 enum class HelpCategory(val title: String) {
     DELIVERY("Доставка"),
@@ -97,7 +109,7 @@ data class WardUiState(
     val category: HelpCategory = HelpCategory.TECH,
     val urgency: Urgency = Urgency.ASAP, 
     val address: String = "Политехническая улица, 29В",
-    val apartment: String = "106",
+    val apartment: String = "",
     val comment: String = "",
     val latitude: Double = 60.0092,
     val longitude: Double = 30.3578,
@@ -123,9 +135,13 @@ class WardViewModel(
             it.copy(
                 latitude = latitude,
                 longitude = longitude,
-                address = "Адрес по карте"
+                address = "Адрес: уточните по карте"
             )
         }
+    }
+
+    fun updateAddressText(address: String) {
+        _state.update { it.copy(address = address) }
     }
 
     fun createRequest(onSuccess: () -> Unit) {
@@ -181,6 +197,30 @@ class WardViewModel(
                 .onFailure { error ->
                     _state.update { it.copy(isLoading = false, error = error.message ?: "Не удалось отменить заявку") }
                 }
+        }
+    }
+}
+
+data class WardFoundUiState(
+    val volunteerName: String? = null,
+    val volunteerPhone: String? = null,
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+
+class WardFoundViewModel(private val userRepository: UserRepository) : ViewModel() {
+    private val _state = MutableStateFlow(WardFoundUiState())
+    val state: StateFlow<WardFoundUiState> = _state.asStateFlow()
+
+    fun loadVolunteerName(volunteerId: String?) {
+        if (volunteerId.isNullOrBlank()) return
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null) }
+            runCatching { userRepository.getVolunteerContact(volunteerId) }
+                .onSuccess { (name, phone) ->
+                    _state.update { it.copy(isLoading = false, volunteerName = name, volunteerPhone = phone) }
+                }
+                .onFailure { e -> _state.update { it.copy(isLoading = false, error = e.message ?: "Не удалось загрузить волонтёра") } }
         }
     }
 }
@@ -277,6 +317,7 @@ class AuthViewModel(
 
 data class VolunteerUiState(
     val isLoading: Boolean = false,
+    val acceptingRequest: Boolean = false,
     val error: String? = null,
     val requests: List<RequestSummaryDto> = emptyList(),
     val selected: RequestSummaryDto? = null,
@@ -290,9 +331,13 @@ class VolunteerViewModel(
     private val _state = MutableStateFlow(VolunteerUiState())
     val state: StateFlow<VolunteerUiState> = _state.asStateFlow()
 
-    fun refreshNearby(latitude: Double, longitude: Double) {
+    fun refreshNearby(latitude: Double, longitude: Double, showLoading: Boolean = true) {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
+            if (showLoading) {
+                _state.update { it.copy(isLoading = true, error = null) }
+            } else {
+                _state.update { it.copy(error = null) }
+            }
             runCatching { repository.findNearby(latitude, longitude, radiusKm = 1.0) }
                 .onSuccess { items -> _state.update { it.copy(isLoading = false, requests = items) } }
                 .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message ?: "Ошибка загрузки") } }
@@ -303,15 +348,27 @@ class VolunteerViewModel(
         _state.update { it.copy(selected = item, error = null) }
     }
 
-    fun acceptSelected(onAccepted: (String) -> Unit) {
+    /** Закрывает карточку и открывает экран подтверждения без вызова API (принятие — только после «Подтвердить»). */
+    fun startConfirmFlow(onNavigate: (String) -> Unit) {
         val selected = state.value.selected ?: return
+        val id = selected.id
+        _state.update { it.copy(selected = null, error = null) }
+        onNavigate(id)
+    }
+
+    fun confirmAccept(requestId: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
-            runCatching { repository.acceptRequest(selected.id) }
+            _state.update { it.copy(acceptingRequest = true, error = null) }
+            runCatching { repository.acceptRequest(requestId) }
                 .onSuccess {
-                    _state.update { it.copy(acceptedRequestId = selected.id, selected = null) }
-                    onAccepted(selected.id)
+                    _state.update { it.copy(acceptingRequest = false, acceptedRequestId = requestId) }
+                    onSuccess()
                 }
-                .onFailure { error -> _state.update { it.copy(error = error.message ?: "Не удалось принять заявку") } }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(acceptingRequest = false, error = error.message ?: "Не удалось принять заявку")
+                    }
+                }
         }
     }
 
@@ -327,7 +384,8 @@ class VolunteerViewModel(
 
 class AppViewModelFactory(
     private val authRepository: AuthRepository,
-    private val requestRepository: RequestRepository
+    private val requestRepository: RequestRepository,
+    private val userRepository: UserRepository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
@@ -342,13 +400,17 @@ class AppViewModelFactory(
             @Suppress("UNCHECKED_CAST")
             return VolunteerViewModel(requestRepository) as T
         }
+        if (modelClass.isAssignableFrom(WardFoundViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return WardFoundViewModel(userRepository) as T
+        }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
 
 @Composable
-fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository) {
-    val factory = AppViewModelFactory(authRepository, requestRepository)
+fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository, userRepository: UserRepository) {
+    val factory = AppViewModelFactory(authRepository, requestRepository, userRepository)
     val authVm: AuthViewModel = viewModel(factory = factory)
     val wardVm: WardViewModel = viewModel(factory = factory)
     val authState by authVm.state.collectAsStateWithLifecycle()
@@ -363,6 +425,12 @@ fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository
             onSubmit = authVm::submit
         )
     } else {
+        val session = authState.session!!
+        LaunchedEffect(session.userId) {
+            withContext(Dispatchers.IO) {
+                userRepository.syncMyProfileAfterAuth(session.fullName, session.phone)
+            }
+        }
         val wardState by wardVm.state.collectAsStateWithLifecycle()
         val volunteerVm: VolunteerViewModel = viewModel(factory = factory)
         val volunteerState by volunteerVm.state.collectAsStateWithLifecycle()
@@ -372,17 +440,26 @@ fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository
             composable("volunteer_map") {
                 VolunteerMapScreen(
                     state = volunteerState,
-                    onRefresh = { lat, lon -> volunteerVm.refreshNearby(lat, lon) },
+                    onRefresh = { lat, lon -> volunteerVm.refreshNearby(lat, lon, showLoading = false) },
                     onSelect = volunteerVm::select,
-                    onAcceptSelected = { volunteerVm.acceptSelected { navController.navigate("volunteer_confirm/$it") } },
+                    onAcceptSelected = {
+                        volunteerVm.startConfirmFlow { id -> navController.navigate("volunteer_confirm/$id") }
+                    },
                     onLogout = authVm::logout
                 )
             }
             composable("volunteer_confirm/{requestId}") { backStackEntry ->
                 val requestId = backStackEntry.arguments?.getString("requestId") ?: return@composable
+                val vState by volunteerVm.state.collectAsStateWithLifecycle()
                 VolunteerAcceptConfirmScreen(
+                    accepting = vState.acceptingRequest,
+                    error = vState.error,
                     onBack = { navController.popBackStack() },
-                    onConfirm = { navController.navigate("volunteer_details/$requestId") }
+                    onConfirm = {
+                        volunteerVm.confirmAccept(requestId) {
+                            navController.navigate("volunteer_details/$requestId")
+                        }
+                    }
                 )
             }
             composable("volunteer_details/{requestId}") { backStackEntry ->
@@ -412,6 +489,7 @@ fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository
                 AddressScreen(
                     state = wardState,
                     onAddressPointChange = wardVm::updateAddressPoint,
+                    onAddressTextChange = wardVm::updateAddressText,
                     onNext = { navController.navigate("confirm") }
                 )
             }
@@ -433,8 +511,17 @@ fun WardApp(authRepository: AuthRepository, requestRepository: RequestRepository
                 )
             }
             composable("found") {
+                val foundVm: WardFoundViewModel = viewModel(factory = factory)
+                LaunchedEffect(wardState.assignedVolunteerId) {
+                    foundVm.loadVolunteerName(wardState.assignedVolunteerId)
+                }
+                val foundState by foundVm.state.collectAsStateWithLifecycle()
                 VolunteerFoundScreen(
                     state = wardState,
+                    volunteerName = foundState.volunteerName,
+                    volunteerPhone = foundState.volunteerPhone,
+                    loadingContact = foundState.isLoading,
+                    contactError = foundState.error,
                     onCancel = { wardVm.cancelRequest { navController.navigate("home") } }
                 )
             }
@@ -455,6 +542,8 @@ private fun VolunteerMapScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var userLocationLayer: UserLocationLayer? by remember { mutableStateOf(null) }
+    var currentLocation: Point? by remember { mutableStateOf(null) }
+    var mapInitialized by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { /* no-op */ }
@@ -474,6 +563,40 @@ private fun VolunteerMapScreen(
     }
 
     val fallback = remember { Point(60.0092, 30.3578) }
+    val pinBitmap: Bitmap? = remember {
+        runCatching {
+            val drawable = ContextCompat.getDrawable(context, R.drawable.ic_pin) ?: return@runCatching null
+            // Ensure we have a reasonable size for map markers
+            drawable.toBitmap(width = 96, height = 96, config = Bitmap.Config.ARGB_8888)
+        }.getOrNull()
+    }
+    // Stable marker collection to prevent blinking
+    var markersCollection: MapObjectCollection? by remember { mutableStateOf(null) }
+    var markersKey: String by remember { mutableStateOf("") }
+
+    // Load last known location once we have permission (used for centering and nearby search)
+    LaunchedEffect(Unit) {
+        val fused = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
+        val hasPermission =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (hasPermission) {
+            @Suppress("MissingPermission")
+            fused.lastLocation.addOnSuccessListener { loc ->
+                if (loc != null) currentLocation = Point(loc.latitude, loc.longitude)
+            }
+        }
+    }
+
+    // Auto-refresh nearby requests every 5 seconds WITHOUT moving the camera
+    LaunchedEffect(currentLocation) {
+        while (true) {
+            val p = currentLocation ?: fallback
+            // Silent refresh (no loading flicker)
+            onRefresh(p.latitude, p.longitude)
+            delay(5000)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -492,8 +615,11 @@ private fun VolunteerMapScreen(
                 factory = { mapView },
                 update = {
                     val map = mapView.mapWindow.map
-                    map.move(CameraPosition(fallback, 13.5f, 0f, 0f))
-                    map.mapObjects.clear()
+                    if (!mapInitialized) {
+                        val target = currentLocation ?: fallback
+                        map.move(CameraPosition(target, 14.5f, 0f, 0f))
+                        mapInitialized = true
+                    }
 
                     val hasLocationPermission =
                         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -505,27 +631,48 @@ private fun VolunteerMapScreen(
                             userLocationLayer = mapKit.createUserLocationLayer(mapView.mapWindow)
                         }
                         userLocationLayer?.isVisible = true
+                        val fused = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
+                        @Suppress("MissingPermission")
+                        fused.lastLocation.addOnSuccessListener { loc ->
+                            if (loc != null) currentLocation = Point(loc.latitude, loc.longitude)
+                        }
                     } else {
                         userLocationLayer?.isVisible = false
                     }
 
-                    val icon = ImageProvider.fromResource(context, android.R.drawable.ic_menu_mylocation)
-                    state.requests.forEach { req ->
-                        val point = Point(req.location.latitude, req.location.longitude)
-                        val placemark = map.mapObjects.addPlacemark(point, icon, IconStyle().apply { scale = 1.0f })
-                        placemark.addTapListener(MapObjectTapListener { _, _ ->
-                            onSelect(req)
-                            true
-                        })
+                    val icon = pinBitmap?.let { ImageProvider.fromBitmap(it) }
+                    if (markersCollection == null) {
+                        markersCollection = map.mapObjects.addCollection()
+                    }
+                    // Update markers only if the set changed (avoids frequent clear/re-add)
+                    val newKey = state.requests.map { it.id }.sorted().joinToString("|")
+                    if (newKey != markersKey) {
+                        markersKey = newKey
+                        markersCollection?.clear()
+                        state.requests.forEach { req ->
+                            val point = Point(req.location.latitude, req.location.longitude)
+                            val placemark = if (icon != null) {
+                                markersCollection!!.addPlacemark(point, icon, IconStyle().apply { scale = 1.0f })
+                            } else {
+                                markersCollection!!.addPlacemark(point)
+                            }
+                            placemark.addTapListener(MapObjectTapListener { _, _ ->
+                                onSelect(req)
+                                true
+                            })
+                        }
                     }
                 }
             )
 
             Button(
-                onClick = { onRefresh(fallback.latitude, fallback.longitude) },
+                onClick = {
+                    val p = currentLocation ?: fallback
+                    onRefresh(p.latitude, p.longitude)
+                },
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)
             ) {
-                Text(if (state.isLoading) "Обновляю..." else "Обновить")
+                Text("Обновить")
             }
 
             state.error?.let {
@@ -572,15 +719,44 @@ private fun VolunteerRequestSheet(item: RequestSummaryDto, onAccept: () -> Unit,
 }
 
 @Composable
-private fun VolunteerAcceptConfirmScreen(onBack: () -> Unit, onConfirm: () -> Unit) {
+private fun VolunteerAcceptConfirmScreen(
+    accepting: Boolean,
+    error: String?,
+    onBack: () -> Unit,
+    onConfirm: () -> Unit
+) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Text("Подтверждение", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        Text("Подтвердите, что вы готовы помочь. После этого появятся контактные данные.", color = Color.Gray)
+        Text(
+            "Подтвердите, что вы готовы помочь. Только после этого подопечный увидит, что волонтёр нашёлся, и получит ваши контакты.",
+            color = Color.Gray
+        )
+        error?.let {
+            Spacer(Modifier.height(12.dp))
+            Text(it, color = MaterialTheme.colorScheme.error)
+        }
         Spacer(Modifier.height(24.dp))
-        Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) { Text("Подтвердить") }
+        Button(
+            onClick = onConfirm,
+            enabled = !accepting,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (accepting) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text("Отправка…")
+                }
+            } else {
+                Text("Да, я готов")
+            }
+        }
         Spacer(Modifier.height(12.dp))
-        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Назад") }
+        Button(onClick = onBack, enabled = !accepting, modifier = Modifier.fillMaxWidth()) { Text("Назад") }
     }
 }
 
@@ -700,7 +876,7 @@ private fun HomeScreen(session: UserSession?, onCreate: () -> Unit, onLogout: ()
     ) {
         Text("Добровичок", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(
-            session?.let { "${it.fullName} (${it.role})" } ?: "Помощь рядом",
+            session?.fullName ?: "Помощь рядом",
             style = MaterialTheme.typography.titleMedium,
             color = Color.Gray
         )
@@ -753,6 +929,7 @@ private fun StepOneScreen(
 private fun AddressScreen(
     state: WardUiState,
     onAddressPointChange: (Double, Double) -> Unit,
+    onAddressTextChange: (String) -> Unit,
     onNext: () -> Unit
 ) {
     val context = LocalContext.current
@@ -815,7 +992,7 @@ private fun AddressScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(280.dp)
+                .height(420.dp)
         ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
@@ -828,27 +1005,41 @@ private fun AddressScreen(
                 }
             )
             Text(
-                "📍",
-                modifier = Modifier.align(Alignment.Center),
-                style = MaterialTheme.typography.headlineMedium
+                "",
+                modifier = Modifier.align(Alignment.Center)
+            )
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = ru.dobrovichek.android.R.drawable.ic_pin),
+                contentDescription = null,
+                modifier = Modifier.align(Alignment.Center)
             )
         }
         Spacer(Modifier.height(10.dp))
-        Text("Текущая точка", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
-        Text(
-            "${"%.5f".format(state.latitude)}, ${"%.5f".format(state.longitude)}",
-            style = MaterialTheme.typography.titleMedium
-        )
+        Text(state.address, style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.weight(1f))
         Button(
             onClick = {
                 val center = mapView.mapWindow.map.cameraPosition.target
                 onAddressPointChange(center.latitude, center.longitude)
+                resolveAddress(context, center.latitude, center.longitude)?.let(onAddressTextChange)
                 onNext()
             },
             modifier = Modifier.fillMaxWidth()
         ) { Text("Далее") }
     }
+}
+
+private fun resolveAddress(context: android.content.Context, latitude: Double, longitude: Double): String? {
+    return runCatching {
+        val geocoder = android.location.Geocoder(context, java.util.Locale("ru", "RU"))
+        val results = geocoder.getFromLocation(latitude, longitude, 1) ?: return null
+        val a = results.firstOrNull() ?: return null
+        // Prefer a short, readable line for seniors
+        listOfNotNull(a.thoroughfare, a.subThoroughfare)
+            .joinToString(" ")
+            .ifBlank { a.getAddressLine(0) }
+            ?.let { "Адрес: $it" }
+    }.getOrNull()
 }
 
 @Composable
@@ -865,18 +1056,13 @@ private fun ConfirmScreen(
         SelectCard(title = state.category.title, selected = true, tint = Color(0xFFDDF8DA), onClick = {})
         SelectCard(title = state.urgency.title, selected = true, tint = Color(0xFFFFF2E5), onClick = {})
         Spacer(Modifier.height(12.dp))
-        Text("По адресу", color = Color.Gray)
+        Text("Адрес", color = Color.Gray)
         Text(state.address, style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "Координаты: ${"%.5f".format(state.latitude)}, ${"%.5f".format(state.longitude)}",
-            color = Color.Gray
-        )
         Spacer(Modifier.height(14.dp))
         OutlinedTextField(
             value = state.apartment,
             onValueChange = onApartmentChange,
-            label = { Text("Квартира / подъезд") },
+            label = { Text("Квартира / подъезд *") },
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(12.dp))
@@ -892,7 +1078,7 @@ private fun ConfirmScreen(
         }
         Spacer(Modifier.weight(1f))
         Button(
-            enabled = !state.isLoading,
+            enabled = !state.isLoading && state.apartment.isNotBlank(),
             onClick = onCreate,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -923,7 +1109,9 @@ private fun SearchingScreen(state: WardUiState, onStartSearch: () -> Unit, onCan
         Spacer(Modifier.height(8.dp))
         Text("Пожалуйста, подождите пока мы найдем того, кто сможет Вам помочь")
         Spacer(Modifier.height(12.dp))
-        Text("00:${seconds.toString().padStart(2, '0')}", style = MaterialTheme.typography.headlineSmall)
+        val mm = (seconds / 60).toString().padStart(2, '0')
+        val ss = (seconds % 60).toString().padStart(2, '0')
+        Text("$mm:$ss", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(16.dp))
         CircularProgressIndicator()
         Spacer(Modifier.height(48.dp))
@@ -934,17 +1122,60 @@ private fun SearchingScreen(state: WardUiState, onStartSearch: () -> Unit, onCan
 }
 
 @Composable
-private fun VolunteerFoundScreen(state: WardUiState, onCancel: () -> Unit) {
+private fun VolunteerFoundScreen(
+    state: WardUiState,
+    volunteerName: String?,
+    volunteerPhone: String?,
+    loadingContact: Boolean,
+    contactError: String?,
+    onCancel: () -> Unit
+) {
+    val context = LocalContext.current
+    val nameOk = !volunteerName.isNullOrBlank()
+    val phoneOk = !volunteerPhone.isNullOrBlank()
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
         Text("Волонтер найден и уже спешит к Вам!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Text(
-                    state.assignedVolunteerId?.let { "Волонтёр: ${it.take(8)}..." } ?: "Волонтёр назначен",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+                when {
+                    loadingContact -> {
+                        Text("Загружаем контакты волонтёра…", color = Color.Gray)
+                        Spacer(Modifier.height(8.dp))
+                        CircularProgressIndicator(Modifier.size(36.dp))
+                    }
+                    contactError != null -> {
+                        Text(contactError, color = MaterialTheme.colorScheme.error)
+                    }
+                    else -> {
+                        Text("Волонтёр", color = Color.Gray)
+                        Text(
+                            if (nameOk) volunteerName!! else "Имя не указано в профиле",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("Телефон", color = Color.Gray)
+                        if (phoneOk) {
+                            Text(volunteerPhone!!, style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                                        data = Uri.parse("tel:${volunteerPhone}")
+                                    }
+                                    context.startActivity(dialIntent)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Позвонить")
+                            }
+                        } else {
+                            Text("Не указан в профиле", style = MaterialTheme.typography.bodyLarge, color = Color.Gray)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
                 Text("${state.category.title}, ${state.address}", color = Color.Gray)
             }
         }

@@ -32,6 +32,7 @@ public class UserProfileMapper {
         return new VolunteerProfileResponse(
                 profile.getId(),
                 profile.getFullName(),
+                profile.getPhone(),
                 profile.getBio(),
                 profile.getCity(),
                 profile.getRating(),

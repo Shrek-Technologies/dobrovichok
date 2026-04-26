@@ -7,6 +7,7 @@ import java.util.UUID;
 public record VolunteerProfileResponse(
         UUID id,
         String fullName,
+        String phone,
         String bio,
         String city,
         BigDecimal rating,

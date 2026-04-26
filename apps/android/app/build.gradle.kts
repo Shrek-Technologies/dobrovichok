@@ -23,6 +23,7 @@ android {
         // IDENTITY_BASE_URL=http://<your-pc-ip>:8081/
         buildConfigField("String", "BASE_URL", "\"${loadLocalProperty("REQUEST_BASE_URL").ifBlank { "http://10.0.2.2:8083/" }}\"")
         buildConfigField("String", "IDENTITY_BASE_URL", "\"${loadLocalProperty("IDENTITY_BASE_URL").ifBlank { "http://10.0.2.2:8081/" }}\"")
+        buildConfigField("String", "USER_BASE_URL", "\"${loadLocalProperty("USER_BASE_URL").ifBlank { "http://10.0.2.2:8082/" }}\"")
         buildConfigField("String", "MAPKIT_API_KEY", "\"${loadLocalProperty("MAPKIT_API_KEY")}\"")
     }
 
