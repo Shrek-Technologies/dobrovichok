@@ -13,6 +13,8 @@ import ru.dobrovichek.user.infrastructure.persistence.UserProfileJpaRepository;
 import ru.dobrovichek.user.infrastructure.persistence.VolunteerRatingJpaRepository;
 import ru.dobrovichek.user.infrastructure.persistence.VolunteerRatingSnapshot;
 import ru.dobrovichek.user.infrastructure.persistence.VolunteerRequestHistoryJpaRepository;
+import ru.dobrovichek.user.infrastructure.request.RequestServiceClient;
+import ru.dobrovichek.user.infrastructure.request.RequestSnapshot;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -27,6 +29,7 @@ public class VolunteerRatingService {
     private final VolunteerRequestHistoryJpaRepository volunteerRequestHistoryRepository;
     private final UserProfileJpaRepository userProfileRepository;
     private final UserProfileService userProfileService;
+    private final RequestServiceClient requestServiceClient;
     private final Clock clock;
 
     public VolunteerRatingService(
@@ -34,12 +37,14 @@ public class VolunteerRatingService {
             VolunteerRequestHistoryJpaRepository volunteerRequestHistoryRepository,
             UserProfileJpaRepository userProfileRepository,
             UserProfileService userProfileService,
+            RequestServiceClient requestServiceClient,
             Clock clock
     ) {
         this.volunteerRatingRepository = volunteerRatingRepository;
         this.volunteerRequestHistoryRepository = volunteerRequestHistoryRepository;
         this.userProfileRepository = userProfileRepository;
         this.userProfileService = userProfileService;
+        this.requestServiceClient = requestServiceClient;
         this.clock = clock;
     }
 
@@ -49,7 +54,10 @@ public class VolunteerRatingService {
         userProfileService.ensureVolunteerExists(volunteerId);
 
         VolunteerRequestHistory history = volunteerRequestHistoryRepository.findById(request.requestId())
-                .orElseThrow(() -> new ConflictException("Completed request history not found for rating"));
+                .orElse(null);
+        if (history == null || history.getStatus() != RequestStatus.COMPLETED) {
+            history = reconcileHistoryWithRequestService(history, request.requestId(), volunteerId, currentUser.userId());
+        }
 
         if (!history.getVolunteerId().equals(volunteerId)) {
             throw new ConflictException("Rating request does not belong to the specified volunteer");
@@ -110,5 +118,42 @@ public class VolunteerRatingService {
         if (currentUser.role() != UserRole.WARD) {
             throw new ForbiddenException("Only wards can leave volunteer ratings");
         }
+    }
+
+    /**
+     * Проекция volunteer_request_history обновляется по RabbitMQ с задержкой; перед оценкой подтягиваем факт из request-service.
+     */
+    private VolunteerRequestHistory reconcileHistoryWithRequestService(
+            VolunteerRequestHistory existing,
+            UUID requestId,
+            UUID volunteerId,
+            UUID wardId
+    ) {
+        RequestSnapshot live = requestServiceClient.getRequestAsWard(requestId, wardId)
+                .orElseThrow(() -> new ConflictException("Completed request history not found for rating"));
+        if (live.status() != RequestStatus.COMPLETED) {
+            throw new ConflictException("Rating can be left only for completed requests");
+        }
+        if (live.volunteerId() == null || !live.volunteerId().equals(volunteerId)) {
+            throw new ConflictException("Rating request does not belong to the specified volunteer");
+        }
+        if (!live.wardId().equals(wardId)) {
+            throw new ForbiddenException("You can rate only your own completed requests");
+        }
+        Instant completedAt = live.completedAt() != null ? live.completedAt() : Instant.now(clock);
+        VolunteerRequestHistory row = existing;
+        if (row == null) {
+            Instant acceptedAt = live.acceptedAt() != null ? live.acceptedAt() : completedAt.minusSeconds(1);
+            row = VolunteerRequestHistory.create(requestId, volunteerId, wardId, acceptedAt);
+        }
+        RequestStatus previous = row.getStatus();
+        row.apply(RequestStatus.COMPLETED, completedAt, wardId, volunteerId);
+        volunteerRequestHistoryRepository.save(row);
+        if (previous != RequestStatus.COMPLETED) {
+            UserProfile volunteer = userProfileService.getOrCreateVolunteerShell(volunteerId, completedAt);
+            volunteer.registerCompletedRequest(completedAt);
+            userProfileRepository.save(volunteer);
+        }
+        return row;
     }
 }

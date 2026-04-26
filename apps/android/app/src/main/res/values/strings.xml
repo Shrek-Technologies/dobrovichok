@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Добровичок</string>
+    <string name="notification_channel_name">События заявок</string>
+    <string name="notification_channel_description">Принятие и отмена заявок, завершение помощи</string>
+    <string name="default_notification_channel_id" translatable="false">dobrovichek_events</string>
 </resources>

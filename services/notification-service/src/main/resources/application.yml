@@ -13,3 +13,8 @@ server:
 dobrovichek:
   messaging:
     enabled: true
+  user-service:
+    base-url: ${USER_SERVICE_BASE_URL:http://localhost:8082}
+  internal-api-token: ${INTERNAL_API_TOKEN:}
+  notifications:
+    firebase-enabled: ${FIREBASE_ENABLED:false}

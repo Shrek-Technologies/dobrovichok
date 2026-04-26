@@ -36,6 +36,9 @@ server:
 dobrovichek:
   messaging:
     enabled: true
+  internal-api-token: ${INTERNAL_API_TOKEN:}
+  request-service:
+    base-url: ${REQUEST_SERVICE_BASE_URL:http://localhost:8083}
 
 logging:
   level:

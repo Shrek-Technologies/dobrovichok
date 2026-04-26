@@ -4,12 +4,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.dobrovichek.contracts.UserRole;
 import ru.dobrovichek.user.api.CurrentUser;
+import ru.dobrovichek.user.api.RegisterDeviceRequest;
 import ru.dobrovichek.user.api.UpdateMyProfileRequest;
 import ru.dobrovichek.user.domain.UserProfile;
 import ru.dobrovichek.user.infrastructure.persistence.UserProfileJpaRepository;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -47,6 +49,25 @@ public class UserProfileService {
                 Instant.now(clock)
         );
         return userProfileRepository.save(profile);
+    }
+
+    @Transactional
+    public void registerDevice(CurrentUser currentUser, RegisterDeviceRequest request) {
+        UserProfile profile = getOrCreateCurrent(currentUser);
+        String raw = request.fcmToken();
+        String token = raw == null ? null : raw.trim();
+        if (token != null && token.isEmpty()) {
+            token = null;
+        }
+        profile.updateFcmToken(token, Instant.now(clock));
+        userProfileRepository.save(profile);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<String> findFcmToken(UUID userId) {
+        return userProfileRepository.findById(userId)
+                .map(UserProfile::getFcmToken)
+                .filter(s -> s != null && !s.isBlank());
     }
 
     @Transactional(readOnly = true)

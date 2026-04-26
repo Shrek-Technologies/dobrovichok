@@ -71,6 +71,9 @@ interface RequestApi {
     @GET("api/v1/requests/{requestId}")
     suspend fun getById(@Path("requestId") requestId: String): RequestResponseDto
 
+    @GET("api/v1/requests/active")
+    suspend fun getActive(): RequestResponseDto
+
     @POST("api/v1/requests/{requestId}/cancel")
     suspend fun cancelRequest(@Path("requestId") requestId: String): RequestResponseDto
 

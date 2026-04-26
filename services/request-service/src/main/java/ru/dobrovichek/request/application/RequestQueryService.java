@@ -10,6 +10,7 @@ import ru.dobrovichek.request.domain.HelpRequest;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -29,6 +30,17 @@ public class RequestQueryService {
     public HelpRequest getById(UUID requestId) {
         return requestRepository.findById(requestId)
                 .orElseThrow(() -> new RequestNotFoundException(requestId));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<HelpRequest> findActiveRequest(CurrentUser currentUser) {
+        if (currentUser.role() == UserRole.WARD) {
+            return requestRepository.findActiveForWard(currentUser.userId());
+        }
+        if (currentUser.role() == UserRole.VOLUNTEER) {
+            return requestRepository.findActiveAcceptedForVolunteer(currentUser.userId());
+        }
+        return Optional.empty();
     }
 
     public void assertCanRead(HelpRequest request, CurrentUser currentUser) {

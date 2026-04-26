@@ -52,9 +52,16 @@ data class CreateVolunteerRatingPayload(
     val score: Int
 )
 
+data class RegisterDevicePayload(
+    val fcmToken: String? = null
+)
+
 interface UserApi {
     @PUT("api/v1/users/me")
     suspend fun updateMyProfile(@Body payload: UpdateMyProfilePayload): UserProfileMeDto
+
+    @PUT("api/v1/users/me/device")
+    suspend fun registerDevice(@Body payload: RegisterDevicePayload)
 
     @GET("api/v1/volunteers/{volunteerId}")
     suspend fun getVolunteerProfile(@Path("volunteerId") volunteerId: String): VolunteerProfileDto

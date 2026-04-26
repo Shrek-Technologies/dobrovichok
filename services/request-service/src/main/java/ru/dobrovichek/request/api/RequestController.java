@@ -20,6 +20,7 @@ import ru.dobrovichek.request.application.RequestQueryService;
 import ru.dobrovichek.request.domain.HelpRequest;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -49,6 +50,18 @@ public class RequestController {
     ) {
         HelpRequest created = commandService.create(currentUser, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toResponse(created, true));
+    }
+
+    @GetMapping("/active")
+    public ResponseEntity<RequestResponse> getActive(CurrentUser currentUser) {
+        Optional<HelpRequest> active = queryService.findActiveRequest(currentUser);
+        if (active.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        HelpRequest request = active.get();
+        return ResponseEntity.ok(
+                mapper.toResponse(request, queryService.canViewContact(request, currentUser))
+        );
     }
 
     @GetMapping("/{requestId}")

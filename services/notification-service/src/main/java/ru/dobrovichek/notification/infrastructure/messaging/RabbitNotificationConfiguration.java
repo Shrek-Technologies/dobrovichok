@@ -36,6 +36,11 @@ public class RabbitNotificationConfiguration {
     }
 
     @Bean
+    public Queue notificationVolunteerAbandonedQueue() {
+        return QueueBuilder.durable(RequestEventTopology.NOTIFICATION_REQUEST_VOLUNTEER_ABANDONED_QUEUE).build();
+    }
+
+    @Bean
     public Binding requestCreatedBinding(
             @Qualifier("requestCreatedQueue") Queue requestCreatedQueue,
             TopicExchange requestEventsExchange
@@ -53,6 +58,16 @@ public class RabbitNotificationConfiguration {
         return BindingBuilder.bind(requestStatusChangedQueue)
                 .to(requestEventsExchange)
                 .with(RequestEventTopology.REQUEST_STATUS_CHANGED_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding notificationVolunteerAbandonedBinding(
+            @Qualifier("notificationVolunteerAbandonedQueue") Queue notificationVolunteerAbandonedQueue,
+            TopicExchange requestEventsExchange
+    ) {
+        return BindingBuilder.bind(notificationVolunteerAbandonedQueue)
+                .to(requestEventsExchange)
+                .with(RequestEventTopology.REQUEST_VOLUNTEER_ABANDONED_ROUTING_KEY);
     }
 
     @Bean

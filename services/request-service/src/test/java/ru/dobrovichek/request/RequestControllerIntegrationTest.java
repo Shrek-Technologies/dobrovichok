@@ -112,6 +112,47 @@ class RequestControllerIntegrationTest {
     }
 
     @Test
+    void wardActiveReturnsCreatedRequest() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v1/requests")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(createPayload()))
+                        .header(ServiceHeaders.USER_ID, WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String requestId = objectMapper.readTree(createResponse).get("id").asText();
+
+        mockMvc.perform(get("/api/v1/requests/active")
+                        .header(ServiceHeaders.USER_ID, WARD_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.WARD.name()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(requestId))
+                .andExpect(jsonPath("$.status").value("CREATED"));
+    }
+
+    @Test
+    void volunteerActiveReturnsAcceptedRequest() throws Exception {
+        String requestId = createAndAcceptRequest();
+
+        mockMvc.perform(get("/api/v1/requests/active")
+                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(requestId))
+                .andExpect(jsonPath("$.status").value("ACCEPTED"));
+    }
+
+    @Test
+    void volunteerActiveReturns404WhenNothingAccepted() throws Exception {
+        mockMvc.perform(get("/api/v1/requests/active")
+                        .header(ServiceHeaders.USER_ID, VOLUNTEER_ID)
+                        .header(ServiceHeaders.USER_ROLE, UserRole.VOLUNTEER.name()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void volunteerCanFindNearbyCreatedRequests() throws Exception {
         mockMvc.perform(post("/api/v1/requests")
                         .contentType(MediaType.APPLICATION_JSON)

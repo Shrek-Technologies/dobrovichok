@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import ru.dobrovichek.events.RequestCreatedEvent;
 import ru.dobrovichek.events.RequestEventTopology;
 import ru.dobrovichek.events.RequestStatusChangedEvent;
+import ru.dobrovichek.events.VolunteerAbandonedRequestEvent;
 import ru.dobrovichek.notification.application.NotificationDispatchService;
 
 @Component
@@ -25,6 +26,11 @@ public class RequestEventListener {
 
     @RabbitListener(queues = RequestEventTopology.REQUEST_STATUS_CHANGED_QUEUE)
     public void handleRequestStatusChanged(RequestStatusChangedEvent event) {
+        notificationDispatchService.handle(event);
+    }
+
+    @RabbitListener(queues = RequestEventTopology.NOTIFICATION_REQUEST_VOLUNTEER_ABANDONED_QUEUE)
+    public void handleVolunteerAbandoned(VolunteerAbandonedRequestEvent event) {
         notificationDispatchService.handle(event);
     }
 }

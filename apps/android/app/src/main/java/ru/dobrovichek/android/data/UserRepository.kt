@@ -5,6 +5,14 @@ import retrofit2.HttpException
 import ru.dobrovichek.android.util.PersonNameFormat
 
 class UserRepository(private val userApi: UserApi) {
+    suspend fun registerDevice(fcmToken: String) {
+        userApi.registerDevice(RegisterDevicePayload(fcmToken = fcmToken))
+    }
+
+    suspend fun unregisterDevice() {
+        userApi.registerDevice(RegisterDevicePayload(fcmToken = null))
+    }
+
     suspend fun syncMyProfileAfterAuth(session: UserSession) {
         runCatching {
             userApi.updateMyProfile(

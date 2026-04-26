@@ -1,5 +1,7 @@
 package ru.dobrovichek.android.data
 
+import retrofit2.HttpException
+
 class RequestRepository(
     private val requestApi: RequestApi
 ) {
@@ -70,5 +72,13 @@ class RequestRepository(
 
     suspend fun getRequest(requestId: String): RequestResponseDto {
         return requestApi.getById(requestId)
+    }
+
+    suspend fun getActiveRequestOrNull(): RequestResponseDto? {
+        return try {
+            requestApi.getActive()
+        } catch (e: HttpException) {
+            if (e.code() == 404) null else throw e
+        }
     }
 }

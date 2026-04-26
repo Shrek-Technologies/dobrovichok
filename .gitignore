@@ -34,3 +34,9 @@ out/
 
 # Android (local)
 **/local.properties
+
+# Локальные секреты и ключи Firebase Admin (не коммитить)
+.env
+.env.*
+!.env.example
+*-firebase-adminsdk*.json

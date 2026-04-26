@@ -10,4 +10,5 @@
     <include file="db/changelog/changes/002-create-volunteer-ratings.xml"/>
     <include file="db/changelog/changes/003-user-profiles-name-parts.xml"/>
     <include file="db/changelog/changes/004-volunteer-ratings-unique-req-vol.xml"/>
+    <include file="db/changelog/changes/005-user-profiles-fcm-token.xml"/>
 </databaseChangeLog>

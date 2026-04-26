@@ -25,6 +25,22 @@ public class HelpRequestRepositoryAdapter implements HelpRequestRepository {
     }
 
     @Override
+    public Optional<HelpRequest> findActiveForWard(UUID wardId) {
+        return repository.findFirstByWardIdAndStatusInOrderByCreatedAtDesc(
+                wardId,
+                List.of(RequestStatus.CREATED, RequestStatus.ACCEPTED)
+        );
+    }
+
+    @Override
+    public Optional<HelpRequest> findActiveAcceptedForVolunteer(UUID volunteerId) {
+        return repository.findFirstByVolunteerIdAndStatusOrderByCreatedAtDesc(
+                volunteerId,
+                RequestStatus.ACCEPTED
+        );
+    }
+
+    @Override
     public HelpRequest save(HelpRequest request) {
         return repository.save(request);
     }

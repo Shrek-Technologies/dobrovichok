@@ -1,3 +1,8 @@
 dobrovichek:
   messaging:
     enabled: false
+  notifications:
+    firebase-enabled: false
+  user-service:
+    base-url: http://localhost:8082
+  internal-api-token: test-internal

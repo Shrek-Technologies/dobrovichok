@@ -12,6 +12,7 @@ import ru.dobrovichek.user.infrastructure.persistence.VolunteerRequestHistoryJpa
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -41,7 +42,12 @@ public class VolunteerHistoryProjector {
             return;
         }
 
-        VolunteerRequestHistory history = volunteerRequestHistoryRepository.findById(event.requestId())
+        Optional<VolunteerRequestHistory> existingRow = volunteerRequestHistoryRepository.findById(event.requestId());
+        if (existingRow.isPresent() && existingRow.get().getStatus() == RequestStatus.COMPLETED) {
+            return;
+        }
+
+        VolunteerRequestHistory history = existingRow
                 .orElseGet(() -> VolunteerRequestHistory.create(
                         event.requestId(),
                         volunteerId,

@@ -62,6 +62,9 @@ public class UserProfile {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "fcm_token", length = 512)
+    private String fcmToken;
+
     protected UserProfile() {
     }
 
@@ -115,6 +118,11 @@ public class UserProfile {
         }
         this.rating = Objects.requireNonNull(rating).setScale(2, RoundingMode.HALF_UP);
         this.ratingCount = ratingCount;
+        this.updatedAt = now;
+    }
+
+    public void updateFcmToken(String fcmToken, Instant now) {
+        this.fcmToken = fcmToken;
         this.updatedAt = now;
     }
 
@@ -180,5 +188,9 @@ public class UserProfile {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public String getFcmToken() {
+        return fcmToken;
     }
 }

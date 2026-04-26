@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
 import ru.dobrovichek.user.application.UserProfileMapper;
 import ru.dobrovichek.user.application.UserProfileService;
 import ru.dobrovichek.user.application.VolunteerRatingService;
@@ -50,6 +52,15 @@ public class UserController {
             @Valid @RequestBody UpdateMyProfileRequest request
     ) {
         return mapper.toUserProfileResponse(userProfileService.upsertCurrent(currentUser, request));
+    }
+
+    @PutMapping("/users/me/device")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void registerDevice(
+            CurrentUser currentUser,
+            @RequestBody RegisterDeviceRequest request
+    ) {
+        userProfileService.registerDevice(currentUser, request);
     }
 
     @GetMapping("/volunteers/{volunteerId}")

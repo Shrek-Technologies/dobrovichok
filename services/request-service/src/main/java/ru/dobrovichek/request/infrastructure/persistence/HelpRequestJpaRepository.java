@@ -6,6 +6,7 @@ import ru.dobrovichek.request.domain.HelpRequest;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface HelpRequestJpaRepository extends JpaRepository<HelpRequest, UUID> {
@@ -16,5 +17,15 @@ public interface HelpRequestJpaRepository extends JpaRepository<HelpRequest, UUI
             double maxLatitude,
             double minLongitude,
             double maxLongitude
+    );
+
+    Optional<HelpRequest> findFirstByWardIdAndStatusInOrderByCreatedAtDesc(
+            UUID wardId,
+            Collection<RequestStatus> statuses
+    );
+
+    Optional<HelpRequest> findFirstByVolunteerIdAndStatusOrderByCreatedAtDesc(
+            UUID volunteerId,
+            RequestStatus status
     );
 }

@@ -86,6 +86,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import retrofit2.HttpException
 import ru.dobrovichek.android.data.AuthRepository
+import ru.dobrovichek.android.data.PushRegistration
 import ru.dobrovichek.android.data.RequestRepository
 import ru.dobrovichek.android.data.SessionStore
 import ru.dobrovichek.android.data.UserSession
@@ -106,6 +107,7 @@ import com.yandex.mapkit.user_location.UserLocationLayer
 import com.yandex.mapkit.map.MapObjectCollection
 import com.yandex.runtime.image.ImageProvider
 import android.Manifest
+import android.os.Build
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -344,6 +346,18 @@ class WardViewModel(
         foundWatchJob?.cancel()
         _state.update { WardUiState() }
     }
+
+    fun hydrateActiveWardRequest(request: RequestResponseDto) {
+        val loc = request.location
+        _state.update { s ->
+            s.copy(
+                createdRequestId = request.id,
+                assignedVolunteerId = request.volunteerId?.takeIf { it.isNotBlank() },
+                latitude = loc?.latitude ?: s.latitude,
+                longitude = loc?.longitude ?: s.longitude
+            )
+        }
+    }
 }
 
 data class WardFoundUiState(
@@ -390,7 +404,8 @@ data class AuthUiState(
 )
 
 class AuthViewModel(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
     private val _state = MutableStateFlow(AuthUiState(session = authRepository.currentSession()))
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
@@ -459,8 +474,11 @@ class AuthViewModel(
     }
 
     fun logout() {
-        authRepository.logout()
-        _state.update { AuthUiState() }
+        viewModelScope.launch {
+            runCatching { userRepository.unregisterDevice() }
+            authRepository.logout()
+            _state.update { AuthUiState() }
+        }
     }
 
     private val namePartRegex = Regex("^[\\p{L}]([\\p{L}\\-']){0,59}$")
@@ -689,7 +707,7 @@ class AppViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return AuthViewModel(authRepository) as T
+            return AuthViewModel(authRepository, userRepository) as T
         }
         if (modelClass.isAssignableFrom(WardViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
@@ -733,17 +751,82 @@ fun WardApp(
         )
     } else {
         val session = authState.session!!
+        val context = LocalContext.current
+        val notificationPermissionLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { }
         LaunchedEffect(session.userId) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val granted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!granted) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
             withContext(Dispatchers.IO) {
                 userRepository.syncMyProfileAfterAuth(session)
+                runCatching { PushRegistration.syncToBackend(userRepository) }
             }
         }
         val wardState by wardVm.state.collectAsStateWithLifecycle()
         val volunteerVm: VolunteerViewModel = viewModel(factory = factory)
         val volunteerState by volunteerVm.state.collectAsStateWithLifecycle()
         val navController = rememberNavController()
-        val start = if (authState.session?.role == "VOLUNTEER") "volunteer_map" else "home"
-        NavHost(navController = navController, startDestination = start) {
+        val navigateWardHome: () -> Unit = {
+            navController.navigate("home") {
+                popUpTo(navController.graph.id) { inclusive = true }
+            }
+        }
+        NavHost(navController = navController, startDestination = "resume") {
+            composable("resume") {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+                LaunchedEffect(session.userId, session.role) {
+                    val dest = try {
+                        when (session.role) {
+                            "VOLUNTEER" -> {
+                                val active = requestRepository.getActiveRequestOrNull()
+                                if (active != null) "volunteer_details/${active.id}" else "volunteer_map"
+                            }
+                            else -> {
+                                val active = requestRepository.getActiveRequestOrNull()
+                                when {
+                                    active == null -> "home"
+                                    active.status.equals("CANCELLED", ignoreCase = true) -> "home"
+                                    active.status.equals("COMPLETED", ignoreCase = true) -> "home"
+                                    active.status.equals("ACCEPTED", ignoreCase = true) &&
+                                        !active.volunteerId.isNullOrBlank() -> {
+                                        wardVm.hydrateActiveWardRequest(active)
+                                        "found"
+                                    }
+                                    active.status.equals("CREATED", ignoreCase = true) -> {
+                                        wardVm.hydrateActiveWardRequest(active)
+                                        "searching"
+                                    }
+                                    active.status.equals("ACCEPTED", ignoreCase = true) -> {
+                                        wardVm.hydrateActiveWardRequest(active)
+                                        "searching"
+                                    }
+                                    else -> "home"
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {
+                        if (session.role == "VOLUNTEER") "volunteer_map" else "home"
+                    }
+                    navController.navigate(dest) {
+                        popUpTo("resume") { inclusive = true }
+                    }
+                }
+            }
             composable("volunteer_map") {
                 LaunchedEffect(Unit) { volunteerVm.onVolunteerMapShown() }
                 VolunteerMapScreen(
@@ -862,9 +945,7 @@ fun WardApp(
                     onCancel = {
                         wardVm.cancelRequest {
                             Toast.makeText(wContext, "Заявка отменена.", Toast.LENGTH_SHORT).show()
-                            navController.navigate("home") {
-                                popUpTo("home") { inclusive = true }
-                            }
+                            navigateWardHome()
                         }
                     }
                 )
@@ -879,12 +960,13 @@ fun WardApp(
                     wardVm.startFoundWatcher(
                         onCancelled = {
                             Toast.makeText(fContext, "Заявка отменена.", Toast.LENGTH_SHORT).show()
-                            navController.navigate("home") {
-                                popUpTo("home") { inclusive = true }
-                            }
+                            navigateWardHome()
                         },
                         onVolunteerReleased = {
-                            navController.popBackStack()
+                            navController.navigate("searching") {
+                                popUpTo("found") { inclusive = true }
+                                launchSingleTop = true
+                            }
                         },
                         onCompleted = { volunteerId, requestId ->
                             navController.navigate("rate_volunteer/$volunteerId/$requestId") {
@@ -914,9 +996,7 @@ fun WardApp(
                     onCancel = {
                         wardVm.cancelRequest {
                             Toast.makeText(fContext, "Заявка отменена.", Toast.LENGTH_SHORT).show()
-                            navController.navigate("home") {
-                                popUpTo("home") { inclusive = true }
-                            }
+                            navigateWardHome()
                         }
                     }
                 )
@@ -931,9 +1011,7 @@ fun WardApp(
                     volunteerId = volunteerId,
                     onHome = {
                         wardVm.clearWardRequestFlow()
-                        navController.navigate("home") {
-                            popUpTo("home") { inclusive = true }
-                        }
+                        navigateWardHome()
                     },
                     onSubmitRating = { score ->
                         scope.launch {
@@ -944,9 +1022,7 @@ fun WardApp(
                             }.onSuccess {
                                 Toast.makeText(rContext, "Спасибо за оценку!", Toast.LENGTH_SHORT).show()
                                 wardVm.clearWardRequestFlow()
-                                navController.navigate("home") {
-                                    popUpTo("home") { inclusive = true }
-                                }
+                                navigateWardHome()
                             }.onFailure { e ->
                                 val text = when (e) {
                                     is HttpException -> {
