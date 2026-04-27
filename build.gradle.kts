@@ -7,6 +7,18 @@ plugins {
 group = "ru.dobrovichek"
 version = "0.1.0-SNAPSHOT"
 
+tasks.register("integrationTest") {
+    description = "Runs src/integrationTest for services that define it"
+    group = "verification"
+    dependsOn(
+        project(":services:api-gateway").tasks.named("integrationTest"),
+        project(":services:identity-service").tasks.named("integrationTest"),
+        project(":services:notification-service").tasks.named("integrationTest"),
+        project(":services:request-service").tasks.named("integrationTest"),
+        project(":services:user-service").tasks.named("integrationTest"),
+    )
+}
+
 subprojects {
     group = rootProject.group
     version = rootProject.version
@@ -26,7 +38,7 @@ configure(subprojects.filter { it.path.startsWith(":libs:") }) {
         targetCompatibility = javaVersion
     }
 
-    tasks.withType<Test> {
+    tasks.withType<org.gradle.api.tasks.testing.Test> {
         useJUnitPlatform()
     }
 }
@@ -48,7 +60,29 @@ configure(subprojects.filter { it.path.startsWith(":services:") }) {
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     }
 
-    tasks.withType<Test> {
+    tasks.withType<org.gradle.api.tasks.testing.Test> {
         useJUnitPlatform()
+    }
+}
+
+configure(subprojects.filter { it.path.startsWith(":libs:") || it.path.startsWith(":services:") }) {
+    apply(plugin = "jacoco")
+
+    configure<org.gradle.testing.jacoco.plugins.JacocoPluginExtension> {
+        toolVersion = "0.8.12"
+    }
+
+    tasks.named<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoTestReport") {
+        dependsOn(tasks.named("test"))
+        reports {
+            xml.required.set(true)
+            html.required.set(true)
+            html.outputLocation.set(layout.buildDirectory.dir("coverage/jacoco-html"))
+            xml.outputLocation.set(layout.buildDirectory.file("coverage/jacoco.xml"))
+        }
+    }
+
+    tasks.named<org.gradle.api.tasks.testing.Test>("test") {
+        finalizedBy(tasks.named("jacocoTestReport"))
     }
 }

@@ -22,4 +22,6 @@ dependencies {
     compileOnly("jakarta.servlet:jakarta.servlet-api")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("io.projectreactor:reactor-core")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

@@ -17,14 +17,14 @@ import ru.dobrovichek.contracts.UserRole;
 import ru.dobrovichek.events.RequestStatusChangedEvent;
 import ru.dobrovichek.jwt.JwtProperties;
 import ru.dobrovichek.jwt.JwtTokenIssuer;
+import ru.dobrovichek.user.dto.RequestRichSnapshot;
+import ru.dobrovichek.user.dto.RequestSnapshot;
+import ru.dobrovichek.user.repository.UserProfileJpaRepository;
+import ru.dobrovichek.user.repository.VolunteerRatingJpaRepository;
+import ru.dobrovichek.user.repository.VolunteerRequestHistoryJpaRepository;
 import ru.dobrovichek.user.service.VolunteerHistoryProjector;
 import ru.dobrovichek.user.service.VolunteerRatingService;
-import ru.dobrovichek.user.repository.VolunteerRatingJpaRepository;
-import ru.dobrovichek.user.repository.UserProfileJpaRepository;
-import ru.dobrovichek.user.repository.VolunteerRequestHistoryJpaRepository;
-import ru.dobrovichek.user.dto.RequestRichSnapshot;
 import ru.dobrovichek.user.util.RequestServiceClient;
-import ru.dobrovichek.user.dto.RequestSnapshot;
 
 import java.time.Instant;
 import java.util.Map;
@@ -33,7 +33,6 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
-
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;

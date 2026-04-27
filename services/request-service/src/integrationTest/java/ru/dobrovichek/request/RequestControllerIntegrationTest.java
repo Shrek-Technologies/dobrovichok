@@ -170,6 +170,123 @@ class RequestControllerIntegrationTest {
                 .andExpect(jsonPath("$[0].distanceKm").isNumber());
     }
 
+    @Test
+    void getByIdReturns404WhenMissing() throws Exception {
+        mockMvc.perform(get("/api/v1/requests/{requestId}", UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void wardCannotAcceptRequest() throws Exception {
+        String requestId = mockMvc.perform(post("/api/v1/requests")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(createPayload()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String id = objectMapper.readTree(requestId).get("id").asText();
+
+        mockMvc.perform(post("/api/v1/requests/{requestId}/accept", id)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void wardCanCancelCreatedRequest() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v1/requests")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(createPayload()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String requestId = objectMapper.readTree(createResponse).get("id").asText();
+
+        mockMvc.perform(post("/api/v1/requests/{requestId}/cancel", requestId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+    }
+
+    @Test
+    void volunteerCannotCancelRequest() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v1/requests")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(createPayload()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String requestId = objectMapper.readTree(createResponse).get("id").asText();
+
+        mockMvc.perform(post("/api/v1/requests/{requestId}/cancel", requestId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void cannotAcceptAlreadyAcceptedRequest() throws Exception {
+        String requestId = createAndAcceptRequest();
+
+        mockMvc.perform(post("/api/v1/requests/{requestId}/accept", requestId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(OTHER_VOLUNTEER_ID, UserRole.VOLUNTEER)))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void wardCanCompleteAcceptedRequest() throws Exception {
+        String requestId = createAndAcceptRequest();
+
+        mockMvc.perform(post("/api/v1/requests/{requestId}/complete", requestId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+    }
+
+    @Test
+    void volunteerCanAbandonAcceptedRequest() throws Exception {
+        String requestId = createAndAcceptRequest();
+
+        mockMvc.perform(post("/api/v1/requests/{requestId}/abandon-volunteer", requestId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CREATED"));
+    }
+
+    @Test
+    void nearbyRejectsRadiusBelowMinimum() throws Exception {
+        mockMvc.perform(get("/api/v1/requests/nearby")
+                        .param("latitude", "59.9343")
+                        .param("longitude", "30.3351")
+                        .param("radiusKm", "0.05")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void nearbyRejectsRadiusAboveMaximum() throws Exception {
+        mockMvc.perform(get("/api/v1/requests/nearby")
+                        .param("latitude", "59.9343")
+                        .param("longitude", "30.3351")
+                        .param("radiusKm", "60")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(VOLUNTEER_ID, UserRole.VOLUNTEER)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createRequestValidatesPayload() throws Exception {
+        mockMvc.perform(post("/api/v1/requests")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(WARD_ID, UserRole.WARD)))
+                .andExpect(status().isBadRequest());
+    }
+
     private String createAndAcceptRequest() throws Exception {
         String createResponse = mockMvc.perform(post("/api/v1/requests")
                         .contentType(MediaType.APPLICATION_JSON)

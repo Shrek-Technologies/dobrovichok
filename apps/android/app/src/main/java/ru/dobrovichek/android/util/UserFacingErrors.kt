@@ -25,9 +25,9 @@ object UserFacingErrors {
         if (throwable is IOException) {
             return when (throwable) {
                 is UnknownHostException ->
-                    "Сервер не найден. На реальном устройстве в apps/android/local.properties укажите API_BASE_URL=http://IP_вашего_ПК:8080/ (не localhost и не 10.0.2.2)."
+                    "Сервер не найден."
                 is ConnectException ->
-                    "Не удалось подключиться к серверу. Проверьте, что бэкенд запущен, телефон в той же Wi‑Fi сети и в firewall разрешён порт 8080."
+                    "Не удалось подключиться к серверу."
                 is SocketTimeoutException -> REQUEST_TIMEOUT
                 else -> NO_CONNECTION
             }
