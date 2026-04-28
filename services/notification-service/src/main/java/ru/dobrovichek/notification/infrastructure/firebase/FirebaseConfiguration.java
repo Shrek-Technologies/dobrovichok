@@ -29,10 +29,6 @@ public class FirebaseConfiguration {
         return FirebaseApp.getInstance();
     }
 
-    /**
-     * Берём ключ только из окружения / системных свойств ({@code GOOGLE_APPLICATION_CREDENTIALS}).
-     * Обрезаем кавычки: в IDEA в поле Environment variables нельзя оборачивать путь в {@code "..."}.
-     */
     private static GoogleCredentials resolveCredentials() throws IOException {
         String raw = firstNonBlank(System.getenv("GOOGLE_APPLICATION_CREDENTIALS"), System.getProperty("GOOGLE_APPLICATION_CREDENTIALS"));
         if (raw != null && !raw.isBlank()) {

@@ -25,7 +25,6 @@ class DobrovichekApp : Application() {
     }
 
     companion object {
-        /** Новый id: старый канал с IMPORTANCE_DEFAULT нельзя «поднять» по важности на уже установленных устройствах. */
         const val NOTIFICATION_CHANNEL_ID = "dobrovichek_events"
     }
 }

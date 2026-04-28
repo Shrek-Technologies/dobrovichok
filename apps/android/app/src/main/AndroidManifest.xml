@@ -14,7 +14,6 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
-        <!-- Иначе FCM в фоне покажет пуш в канале по умолчанию (часто без звука и без heads-up). -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="@string/default_notification_channel_id" />

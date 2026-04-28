@@ -1,42 +1,58 @@
-# dobrovichek
+# Добровичок
+Мобильное приложение, связывающее тех, кому нужна помощь с теми, кто готов помочь.
 
-## Request Service
+## Функциональность
 
-1. Start PostgreSQL:
+### Нуждающийся в помощи
+- Регистрация и авторизация
+- Создание заявок на помощь
+- Просмотр статуса заявки
+- Push-уведомления по изменениям в заявке
+
+### Волонтер
+- Регистрация и авторизация
+- Просмотр актуальных заявок на карте
+- Отклик на заявку и принятие в работу
+- Рейтинг и истории выполненных заявок
+
+## Технологический стек
+- Backend: Java 17, Spring Boot, Spring Security, Spring Cloud Gateway
+- Архитектура: микросервисы (Identity Service, User Service, Request Service, Notification Service)
+- БД и миграции: PostgreSQL, Liquibase
+- Интеграции: REST (HTTP/HTTPS), RabbitMQ (AMQP)
+- Мобильный клиент: Android (Kotlin, Jetpack Compose)
+- Карты и геолокация: Yandex MapKit
+- Push-уведомления: Firebase Cloud Messaging (FCM)
+- Сборка и окружение: Gradle (Kotlin DSL), Docker Compose
+
+## Запуск
+### Backend
+
+1. Инфраструктура (PostgreSQL, RabbitMQ):
 
 ```powershell
-docker compose up -d request-service-postgres
+docker compose up -d
 ```
 
-2. Run `ru.dobrovichek.request.RequestServiceApplication` from IntelliJ IDEA.
+2. При необходимости переопределить переменные окружения:
+- `JWT_SECRET`
+- `INTERNAL_API_TOKEN`
+- `REQUEST_DB_HOST`, `REQUEST_DB_PORT`, `REQUEST_DB_NAME`, `REQUEST_DB_USERNAME`, `REQUEST_DB_PASSWORD`
+- `USER_DB_HOST`, `USER_DB_PORT`, `USER_DB_NAME`, `USER_DB_USERNAME`, `USER_DB_PASSWORD`
+- `RABBITMQ_PORT` (по умолчанию `5672`)
 
-3. Open Swagger UI:
+3. Поднять сервисы:
+- `IdentityServiceApplication`
+- `UserServiceApplication`
+- `RequestServiceApplication`
+- `NotificationServiceApplication`
+- `ApiGatewayApplication`
 
-`http://localhost:8083/swagger-ui.html`
+4. Swagger:
+- общий Swagger через gateway: `http://localhost:8080/swagger-ui.html`
 
-4. Open OpenAPI JSON:
+## Android App
 
-`http://localhost:8083/v3/api-docs`
-
-Default local database settings:
-
-- host: `localhost`
-- port: `5433`
-- database: `dobrovichek_request`
-- username: `dobrovichek`
-- password: `dobrovichek`
-
-If needed, override them with environment variables:
-
-- `REQUEST_DB_HOST`
-- `REQUEST_DB_PORT`
-- `REQUEST_DB_NAME`
-- `REQUEST_DB_USERNAME`
-- `REQUEST_DB_PASSWORD`
-
-## Android App (Ward MVP)
-
-Android app prototype is located in `apps/android`.
-
-Open `apps/android` as a standalone Gradle project in Android Studio and run it on an emulator.
-The app calls **api-gateway** at `http://10.0.2.2:8080/` (эмулятор). На телефоне в `local.properties`: `API_BASE_URL=http://<IP_ПК>:8080/`.
+Клиент находится в `apps/android`.
+> [!IMPORTANT]
+> Не забудьте указать API-ключ Yandex MapKit и адрес backend-сервера в `apps/android/local.properties`.

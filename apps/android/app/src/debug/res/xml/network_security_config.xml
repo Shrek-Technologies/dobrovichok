@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Только debug: HTTP к любому хосту (удобно с телефона на локальный API по LAN IP). Release использует main/res/xml/network_security_config.xml -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>

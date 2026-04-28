@@ -8,9 +8,6 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "dobrovichek.jwt")
 public class JwtProperties {
 
-    /**
-     * HMAC-SHA256 key material; must be at least 32 bytes (UTF-8).
-     */
     private String secret = "dev-only-change-in-production-min-32-chars!!";
 
     private String issuer = "dobrovichek";

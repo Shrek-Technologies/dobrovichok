@@ -630,7 +630,6 @@ class VolunteerViewModel(
         _state.update { it.copy(selected = item, error = null) }
     }
 
-    /** Принятие заявки на сервере — только после экрана «Подтвердить», не здесь. */
     fun startConfirmFlow(onNavigate: (String) -> Unit) {
         val selected = state.value.selected ?: return
         val id = selected.id

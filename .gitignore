@@ -34,6 +34,10 @@ out/
 
 # Android (local)
 **/local.properties
+**/.kotlin/
+**/captures/
+*.keystore
+*.jks
 
 # Локальные секреты и ключи Firebase Admin (не коммитить)
 .env
