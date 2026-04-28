@@ -34,6 +34,7 @@ out/
 
 # Android (local)
 **/local.properties
+**/google-services.json
 **/.kotlin/
 **/captures/
 *.keystore
