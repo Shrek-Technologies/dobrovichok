@@ -1,5 +1,6 @@
 package ru.dobrovichek.user.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ public class InternalUserController {
         this.expectedInternalToken = expectedInternalToken;
     }
 
+    @Operation(summary = "FCM-токен (internal)", description = "Сервис-сервис: токен для push, нужен internal token")
     @GetMapping("/users/{userId}/fcm-token")
     public ResponseEntity<FcmTokenResponse> getFcmToken(
             @PathVariable UUID userId,

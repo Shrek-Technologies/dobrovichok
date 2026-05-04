@@ -1,5 +1,6 @@
 package ru.dobrovichek.request.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -47,6 +48,7 @@ public class RequestController {
         this.mapper = mapper;
     }
 
+    @Operation(summary = "Создать заявку", description = "Новая заявка на помощь от подопечного")
     @PostMapping
     public ResponseEntity<RequestResponse> create(
             @Valid @RequestBody CreateRequestRequest request,
@@ -56,6 +58,7 @@ public class RequestController {
         return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toResponse(created, true));
     }
 
+    @Operation(summary = "Активная заявка", description = "Текущая незавершённая заявка пользователя")
     @GetMapping("/active")
     public ResponseEntity<RequestResponse> getActive(CurrentUser currentUser) {
         Optional<HelpRequest> active = queryService.findActiveRequest(currentUser);
@@ -68,6 +71,7 @@ public class RequestController {
         );
     }
 
+    @Operation(summary = "Заявка по id", description = "Полная информация при наличии прав доступа")
     @GetMapping("/{requestId}")
     public RequestResponse getById(
             @PathVariable UUID requestId,
@@ -78,6 +82,7 @@ public class RequestController {
         return mapper.toResponse(request, queryService.canViewContact(request, currentUser));
     }
 
+    @Operation(summary = "Заявки рядом", description = "Список заявок в радиусе от координат (для карты)")
     @GetMapping("/nearby")
     public List<RequestSummaryResponse> findNearby(
             @RequestParam double latitude,
@@ -92,6 +97,7 @@ public class RequestController {
                 .toList();
     }
 
+    @Operation(summary = "Принять заявку", description = "Волонтёр берёт заявку в работу")
     @PostMapping("/{requestId}/accept")
     public RequestResponse accept(
             @PathVariable UUID requestId,
@@ -101,6 +107,7 @@ public class RequestController {
         return mapper.toResponse(updated, true);
     }
 
+    @Operation(summary = "Отменить заявку", description = "Отмена заявки подопечным или по правилам доступа")
     @PostMapping("/{requestId}/cancel")
     public RequestResponse cancel(
             @PathVariable UUID requestId,
@@ -110,6 +117,7 @@ public class RequestController {
         return mapper.toResponse(updated, true);
     }
 
+    @Operation(summary = "Завершить заявку", description = "Отметить выполнение помощи")
     @PostMapping("/{requestId}/complete")
     public RequestResponse complete(
             @PathVariable UUID requestId,
@@ -119,6 +127,7 @@ public class RequestController {
         return mapper.toResponse(updated, true);
     }
 
+    @Operation(summary = "Отказ волонтёра", description = "Волонтёр снимается с принятой заявки")
     @PostMapping("/{requestId}/abandon-volunteer")
     public RequestResponse abandonVolunteer(
             @PathVariable UUID requestId,

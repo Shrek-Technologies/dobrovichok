@@ -1,5 +1,6 @@
 package ru.dobrovichek.user.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,11 +43,13 @@ public class UserController {
         this.mapper = mapper;
     }
 
+    @Operation(summary = "Мой профиль", description = "Данные текущего пользователя")
     @GetMapping("/users/me")
     public UserProfileResponse getMyProfile(CurrentUser currentUser) {
         return mapper.toUserProfileResponse(userProfileService.getOrCreateCurrent(currentUser));
     }
 
+    @Operation(summary = "Обновить профиль", description = "Имя, контакты и прочие поля профиля")
     @PutMapping("/users/me")
     public UserProfileResponse updateMyProfile(
             CurrentUser currentUser,
@@ -55,6 +58,7 @@ public class UserController {
         return mapper.toUserProfileResponse(userProfileService.upsertCurrent(currentUser, request));
     }
 
+    @Operation(summary = "Регистрация устройства", description = "Сохранение FCM-токена для push-уведомлений")
     @PutMapping("/users/me/device")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void registerDevice(
@@ -64,17 +68,20 @@ public class UserController {
         userProfileService.registerDevice(currentUser, request);
     }
 
+    @Operation(summary = "Профиль волонтёра", description = "Публичные данные и рейтинг")
     @GetMapping("/volunteers/{volunteerId}")
     public VolunteerProfileResponse getVolunteerProfile(@PathVariable UUID volunteerId) {
         return mapper.toVolunteerProfileResponse(userProfileService.getVolunteerProfile(volunteerId));
     }
 
+    @Operation(summary = "История заявок волонтёра", description = "Завершённые заявки по волонтёру")
     @GetMapping("/volunteers/{volunteerId}/requests/history")
     public List<VolunteerRequestHistoryResponse> getVolunteerHistory(@PathVariable UUID volunteerId) {
         userProfileService.ensureVolunteerExists(volunteerId);
         return volunteerRequestHistoryAssembler.completedForVolunteer(volunteerId);
     }
 
+    @Operation(summary = "Оценка волонтёра", description = "Выставить оценку после выполненной заявки")
     @PostMapping("/volunteers/{volunteerId}/ratings")
     public VolunteerRatingResponse createVolunteerRating(
             @PathVariable UUID volunteerId,

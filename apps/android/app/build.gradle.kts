@@ -47,8 +47,11 @@ android {
 }
 
 fun loadLocalProperty(key: String): String {
-    val propertiesFile = rootProject.file("local.properties")
-    if (!propertiesFile.exists()) return ""
+    val propertiesFile = sequenceOf(
+        rootProject.file("local.properties"),
+        rootProject.file("apps/android/local.properties"),
+        project.file("../local.properties")
+    ).firstOrNull { it.exists() } ?: return ""
     val properties = Properties()
     propertiesFile.inputStream().use { properties.load(it) }
     return properties.getProperty(key, "")
